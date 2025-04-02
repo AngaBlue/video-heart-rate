@@ -31,8 +31,8 @@ plt.ion()  #  interactive mode
 fig, ax = plt.subplots()
 line1, = ax.plot([], [], label="Forehead")
 line2, = ax.plot([], [], label="Cheek")
-ax.set_ylim(-2, 2) # For normalized filtered signal
-ax.set_xlim(0, 300) # Keep this if you want a 10-second window at 30 fps
+ax.set_ylim(-2, 2) # since we normalized and filtered signal, keep it centered around 0 
+ax.set_xlim(0, 300) # 10-second window at 30 fps
 ax.set_title("Green Channel Signal")
 ax.set_xlabel("Frame")
 ax.set_ylabel("Filtered Green Value")
@@ -141,7 +141,7 @@ else:
                     g_forehead = detrend(np.array(green_signal_forehead))
                     g_cheek = detrend(np.array(green_signal_cheek))
 
-                    # normalise using z score
+                    # normalise using z score (mean=0, sd=1) to remove outliers
                     g_forehead = (g_forehead - np.mean(g_forehead)) / np.std(g_forehead)
                     g_cheek = (g_cheek - np.mean(g_cheek)) / np.std(g_cheek)
 
