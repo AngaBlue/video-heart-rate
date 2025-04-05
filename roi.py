@@ -1,14 +1,16 @@
+import os
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # disable mac-os warnings
+os.environ['GLOG_minloglevel'] = '3'
+
+
 import mediapipe as mp
 import cv2 as cv
-import time
 import numpy as np
 import matplotlib.pyplot as plt
-from collections import deque
 from scipy.signal import butter, filtfilt
-import os
+from collections import deque
+import time
 
-# suppress tensorflow warnings for macos
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 
 # signal storage
@@ -119,8 +121,16 @@ def process_frame(frame_bgr, landmarks):
     green_signal_cheek.append(avg_green_cheek)
 
 
+
 def main():
-    global last_result
+
+    print("PRESS q to quit -- PRESS spacebar to pause")
+
+    # important variables
+    global last_result # last detected frame
+    paused = False # boolean flag for pause functionality
+    last_frame = None # copy of last detected frame
+
     # setup plot
     plt.ion()
     _, ax = plt.subplots()
@@ -141,37 +151,70 @@ def main():
 
     with landmarker:
         while True:
-            ret, frame_bgr = cam.read()
-            if not ret:
-                print("end of stream or failed to capture frame.")
-                break
+            if not paused:    
+                ret, frame_bgr = cam.read()
 
-            frame_rgb = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+                # if we hit the end of our video footage (last frame)
+                if not ret:
+                    print("End of stream reached — freezing displays. Press 'q' to quit.")
+                    # disable interactive mode to freeze graph at last result
+                    plt.ioff()
+                    plt.show()  # display the final plot
+                    # loop to freeze the video window at the last frame.
+                    while True:
+                        cv.imshow("face landmarker with rois", last_frame)
+                        key = cv.waitKey(1) & 0xFF
+                        if key == ord('q'):
+                            break
+                    break  # break out of the main loop once 'q' is pressed
 
-            timestamp = int(time.time() * 1000) if use_callback else int(cam.get(cv.CAP_PROP_POS_MSEC))
-            if use_callback:
-                landmarker.detect_async(mp_image, timestamp)
+                # saving current frame so it can be displayed if we hit pause
+                last_frame = frame_bgr.copy()
+
+                frame_rgb = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
+                mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
+
+                timestamp = int(time.time() * 1000) if use_callback else int(cam.get(cv.CAP_PROP_POS_MSEC))
+                if use_callback:
+                    landmarker.detect_async(mp_image, timestamp)
+                else:
+                    last_result = landmarker.detect_for_video(mp_image, timestamp)
+
+                if last_result and last_result.face_landmarks:
+                    process_frame(frame_bgr, last_result.face_landmarks[0])
+
+                    # ensure signal is long enough to filter
+                    if len(green_signal_forehead) >= 30:
+
+
+                        # TODO!: filtering and EVM HERE
+
+                        update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
+
+            # if we hit pause, use last captured frame
             else:
-                last_result = landmarker.detect_for_video(mp_image, timestamp)
-
-            if last_result and last_result.face_landmarks:
-                process_frame(frame_bgr, last_result.face_landmarks[0])
-
-                # ensure signal is long enough to filter
-                if len(green_signal_forehead) >= 30:
-                    update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
-
+                frame_bgr = last_frame
+            
+            # display frame with roi 
             cv.imshow("face landmarker with rois", frame_bgr)
-            if cv.waitKey(1) & 0xFF == ord('q'):
+            
+            key = cv.waitKey(1) & 0xFF # wait 1 ms, then extract keycode
+            # q = quit
+            if key == ord('q'):
                 break
+            # TODO! when paused, ROI dissapear
+            # spacebar = pause  must be clicked on open-cv frame window (face) display 
+            if key == ord(' '):
+                paused = not paused
+
 
     cam.release()
     cv.destroyAllWindows()
 
 
-if __name__ == "__main__":
-    main()
+main()
+'''if __name__ == "__main__":
+    main()'''
 
 
 

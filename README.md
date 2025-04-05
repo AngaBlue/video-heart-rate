@@ -11,6 +11,8 @@ SETUP (mac-os)
 2. pip install -r requirements.txt
 
 
+Notes:
+pause functionality only works if u press on CV window
 
 I am referencing the following papers:
 
