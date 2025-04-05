@@ -1,8 +1,8 @@
 import os
-# Suppress TensorFlow logs for macos
+# silence TensorFlow logs for macos
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# Suppress absl logs used by MediaPipe for macos
+# silence absl logs used by MediaPipe for macos
 os.environ['GLOG_minloglevel'] = '3'
 os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
 
