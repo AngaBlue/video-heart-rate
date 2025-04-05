@@ -8,15 +8,22 @@ from scipy.signal import butter, filtfilt, detrend, find_peaks
 from requests import get
 import os
 
+# ignore macos tensorflow warnings
+# os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
-# download model once
-model_url = "https://raw.githubusercontent.com/AngaBlue/video-heart-rate/main/face_landmarker.task"
-model_path = "face_landmarker.task"
 
+# local model path (inside your repo folder)
+model_path = os.path.join("video-heart-rate", "face_landmarker.task")
+
+# download if it's missing 
+'''
 if not os.path.exists(model_path):
+    from requests import get
+    model_url = "https://raw.githubusercontent.com/AngaBlue/video-heart-rate/main/face_landmarker.task"
     response = get(model_url)
     with open(model_path, "wb") as f:
-        f.write(response.content)
+        f.write(response.content)'''
+
 
 # MediaPipe setup (thank u papa google)
 BaseOptions = mp.tasks.BaseOptions
@@ -66,7 +73,7 @@ def get_roi(horizontal_ratio, top_ratio, bottom_ratio):
 
 
 # input selection, adjust MediaPipe parameters accordingly
-input_choice = input("Select input mode: [1] Webcam, [2] Video file: Light,  [3] Video file: Dark").strip()
+input_choice = input("Select input mode: [1] Webcam -- [2] Video file LIGHT --  [3] Video file DARK:  ").strip()
 # live stream (web-cam) option
 if input_choice == "1":
     running_mode = VisionRunningMode.LIVE_STREAM
