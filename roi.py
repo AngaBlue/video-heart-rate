@@ -1,6 +1,10 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3' # disable mac-os warnings
+# Suppress TensorFlow logs for macos
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+# Suppress absl logs used by MediaPipe for macos
 os.environ['GLOG_minloglevel'] = '3'
+os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
 
 
 import mediapipe as mp
@@ -10,7 +14,6 @@ import matplotlib.pyplot as plt
 from scipy.signal import butter, filtfilt
 from collections import deque
 import time
-
 
 
 # signal storage
@@ -187,7 +190,21 @@ def main():
                     if len(green_signal_forehead) >= 30:
 
 
-                        # TODO!: filtering and EVM HERE
+                        # TODO!
+
+                        '''
+                        EVM PROCESS
+
+                        - get video frames in YIQ colorspace
+                        - obtain single gaussian pyramid level of each frame
+                        - temporal bandpass filter to obtain heart rate between 0.83 to 1.0 Hz
+                        - magnify filtered pyramid levels back
+                        - add magnified pyramid levels back to original frames
+                        - convert back to RGB / BGR color space to display 
+
+                        '''
+
+
 
                         update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
 
