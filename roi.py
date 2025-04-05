@@ -18,7 +18,7 @@ if not os.path.exists(model_path):
     with open(model_path, "wb") as f:
         f.write(response.content)
 
-# MediaPipe setup
+# MediaPipe setup (thank u papa google)
 BaseOptions = mp.tasks.BaseOptions
 FaceLandmarker = mp.tasks.vision.FaceLandmarker
 FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
