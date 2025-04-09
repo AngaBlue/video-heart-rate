@@ -3,12 +3,8 @@ import mediapipe as mp
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 import scipy.signal as signal
-
-
 from collections import deque
-from glob import glob
 import sys
 
 #import sys
@@ -29,8 +25,10 @@ FREQ_HIGH = 4         # high frequency cutoff in Hz
 SCALE_FACTOR = 1.0    # not used in this version
 
 ###########################
-#   Color Magnification   #
+#   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag
 ###########################
+
+
 
 def rgb2yiq(rgb):
     """Converts an RGB image to YIQ using FCC NTSC format.
@@ -60,6 +58,7 @@ def yiq2rgb(yiq):
 
 # inverse colorspace conversion: YIQ -> RGB, then normalize to uint8.
 inv_colorspace = lambda x: cv2.normalize(yiq2rgb(x), None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC3)
+
 
 def compute_downsampled_size(shape, level):
     rows, cols, _ = shape

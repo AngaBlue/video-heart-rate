@@ -4,4 +4,4 @@ numpy
 matplotlib
 scipy
 requests
-glob2
+
