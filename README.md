@@ -3,7 +3,7 @@
 Remote photoplethysmography (rPPG) uses cameras to non-invasively monitor vital signals like heart rate, offering contactless monitoring with potential for remote healthcare applications.
 
 
-SETUP (mac-os)
+SETUP (mac-os), YOU NEED  TO BE EXACTLY INSIDE /video-heart-rate to run this 
 
 1. source .venv/bin/activate (if u already have ur .venv)
 1. python3 -m venv .venv (if u need to create ur .venv)
@@ -16,6 +16,7 @@ pause functionality only works if u press on CV window
 
 I am referencing the following papers / repositories:
 
+https://people.csail.mit.edu/mrub/evm/ - website
 https://people.csail.mit.edu/mrub/papers/vidmag.pdf - EVM, video footage
 https://github.com/itberrios/CV_projects/tree/main/color_mag - python implementation of EVM
 https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - overall structure 
