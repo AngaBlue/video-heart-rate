@@ -22,6 +22,7 @@ ALPHA = 50.0          # magnification factor
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid
 FREQ_LOW = 0.4        # low frequency cutoff in Hz 
 FREQ_HIGH = 4         # high frequency cutoff in Hz
+SCALE_FACTOR = 1.0    
 
 ###########################
 #   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag
