@@ -14,10 +14,11 @@ SETUP (mac-os)
 Notes:
 pause functionality only works if u press on CV window
 
-I am referencing the following papers:
+I am referencing the following papers / repositories:
 
-https://people.csail.mit.edu/mrub/evm/ - EVM, video footage
-https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 
+https://people.csail.mit.edu/mrub/papers/vidmag.pdf - EVM, video footage
+https://github.com/itberrios/CV_projects/tree/main/color_mag - python implementation of EVM
+https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - overall structure 
 
 
 ISSUES:

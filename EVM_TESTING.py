@@ -29,7 +29,6 @@ SCALE_FACTOR = 1.0    # not used in this version
 ###########################
 
 
-
 def rgb2yiq(rgb):
     """Converts an RGB image to YIQ using FCC NTSC format.
         (using built in colorsys library is way too slow)
