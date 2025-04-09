@@ -8,7 +8,7 @@ from collections import deque
 import sys
 
 #import sys
-   #ys.path.insert(0,'/path/to/mod_directory')
+   #sys.path.insert(0,'/path/to/mod_directory')
 
 
 
@@ -22,7 +22,6 @@ ALPHA = 50.0          # magnification factor
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid
 FREQ_LOW = 0.4        # low frequency cutoff in Hz 
 FREQ_HIGH = 4         # high frequency cutoff in Hz
-SCALE_FACTOR = 1.0    # not used in this version
 
 ###########################
 #   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag

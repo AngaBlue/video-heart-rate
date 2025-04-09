@@ -24,4 +24,4 @@ https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s
 
 ISSUES:
 
-shape/size issues with gausian pyramid when there are an odd number of frames
+shape/size issues with gaussian pyramid when there are an odd number of frames
