@@ -1,25 +1,22 @@
 import os
-# silence TensorFlow logs for macos
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-
-# silence absl logs used by MediaPipe for macos
-os.environ['GLOG_minloglevel'] = '3'
-os.environ['ABSL_MIN_LOG_LEVEL'] = '3'
-
-
 import mediapipe as mp
 import cv2 as cv
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.signal import butter, filtfilt
-from collections import deque
 import time
-
+import scipy.signal as sp_sigal
+from collections import deque
+from glob import glob
+import colorsys 
 
 # signal storage
 green_signal_forehead = deque(maxlen=300) # we dont need old frames
 green_signal_cheek = deque(maxlen=300)
 last_result = None
+
+# after evm
+filtered_forehead = deque(maxlen=300)
+filtered_cheek = deque(maxlen=300)
 
 
 # MediaPipe setup (thank u papa google)
@@ -30,11 +27,16 @@ FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode # select mode, e.g VIDEO or LIVE-STREAM
 
 
-# TODO!  fix params
-def bandpass_filter(signal, fs=30, low=0.7, high=4.0, order=3):
-    nyq = 0.5 * fs
-    b, a = butter(order, [low / nyq, high / nyq], btype='band')
-    return filtfilt(b, a, signal)
+# EVM parameters
+# video magnification factor
+ALPHA = 50.0
+# gaussian pyramid level of which to apply magnification, amplify signal, not noise, level 4 = 1/16 resolution
+LEVEL = 4 
+# temporal frequency filter params 
+FREQ_LOW = 0.4*60 
+FREQ_HIGH = 4*60 
+# video frame scale factor
+SCALE_FACTOR = 1.0
 
 
 # asynchronous callback
@@ -55,27 +57,6 @@ def setup_face_landmarker(model_path, running_mode, callback=None):
     return FaceLandmarker.create_from_options(options)
 
 
-# select VIDEO or LIVESTREAM mode
-def select_input():
-    input_choice = input("select input: [1] webcam -- [2] video-footage light -- [3] video-footage dark: ").strip()
-    if input_choice == "1":
-        cam = cv.VideoCapture(0)
-        if not cam.isOpened():
-            print("error: could not open webcam.")
-            exit()
-        return cam, VisionRunningMode.LIVE_STREAM, True
-    elif input_choice == "2":
-        path = os.path.join("video-footage", "light_skin.mp4")
-        return cv.VideoCapture(path), VisionRunningMode.VIDEO, False
-    elif input_choice == "3":
-        path = os.path.join("video-footage", "dark_skin.mp4")
-        return cv.VideoCapture(path), VisionRunningMode.VIDEO, False
-    else:
-        print("invalid choice.")
-        exit()
-
-
-
 def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bottom_ratio, frame_bgr):
     roi_y1 = int(bb_y1 + top_ratio * (bb_y2 - bb_y1))
     roi_y2 = int(bb_y1 + bottom_ratio * (bb_y2 - bb_y1))
@@ -85,7 +66,7 @@ def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bott
     return roi_x1, roi_y1, roi_x2, roi_y2
 
 
-def extract_green_channel(roi):
+def get_avg_green(roi):
     return np.mean(roi[:, :, 1]) # height, width, color
 
 
@@ -117,13 +98,35 @@ def process_frame(frame_bgr, landmarks):
     roi_forehead = frame_bgr[f_y1:f_y2, f_x1:f_x2]
     roi_cheek = frame_bgr[c_y1:c_y2, c_x1:c_x2]
 
-    avg_green_forehead = extract_green_channel(roi_forehead)
-    avg_green_cheek = extract_green_channel(roi_cheek)
+    avg_green_forehead = get_avg_green(roi_forehead)
+    avg_green_cheek = get_avg_green(roi_cheek)
 
     green_signal_forehead.append(avg_green_forehead)
     green_signal_cheek.append(avg_green_cheek)
+    
+
+# coverts a BGR image to float32 YIQ
+def bgr2yiq(frame_bgr):
+    # get normalized YIQ frame
+    rgb = np.float32(cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB))
+    yig = colorsys.rgb_to_yiq(rgb)
+    return yig
 
 
+
+
+'''
+EVM PROCESS from MIT paper
+
+- get video frames in YIQ colorspace
+- obtain single gaussian pyramid level of each frame
+- temporal bandpass filter to obtain heart rate between 0.83 to 1.0 Hz
+- magnify filtered pyramid levels back
+- add magnified pyramid levels back to original frames
+- convert back to RGB / BGR color space to display
+'''
+
+#def evm(frame_bgr):
 
 def main():
 
@@ -134,7 +137,7 @@ def main():
     paused = False # boolean flag for pause functionality
     last_frame = None # copy of last detected frame
 
-    # setup plot
+    # setup interactive plot
     plt.ion()
     _, ax = plt.subplots()
     line1, = ax.plot([], [], label="forehead")
@@ -148,19 +151,26 @@ def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(script_dir, "face_landmarker.task")
 
-    # select input and mode
-    cam, running_mode, use_callback = select_input()
+    # select input for LIVE STREAM mode (webcam)
+    cam = cv.VideoCapture(0)
+    if not cam.isOpened():
+        print("error: could not open webcam.")
+        exit()
+    running_mode = VisionRunningMode.LIVE_STREAM
+    use_callback = True
+
     landmarker = setup_face_landmarker(model_path, running_mode, get_result if use_callback else None)
 
     with landmarker:
         while True:
             if not paused:    
                 ret, frame_bgr = cam.read()
+                # video sampling rate
+                fs = cam.get(cv.CAP_PROP_FPS) # some webcams may give incorrect fps
 
-                # if we hit the end of our video footage (last frame)
+                # if we hit the end of our stream (unlikely for live stream but check anyway)
                 if not ret:
                     print("End of stream reached — freezing displays. Press 'q' to quit.")
-                    # disable interactive mode to freeze graph at last result
                     plt.ioff()
                     plt.show()  # display the final plot
                     # loop to freeze the video window at the last frame.
@@ -169,7 +179,7 @@ def main():
                         key = cv.waitKey(1) & 0xFF
                         if key == ord('q'):
                             break
-                    break  # break out of the main loop once 'q' is pressed
+                    break
 
                 # saving current frame so it can be displayed if we hit pause
                 last_frame = frame_bgr.copy()
@@ -184,29 +194,11 @@ def main():
                     last_result = landmarker.detect_for_video(mp_image, timestamp)
 
                 if last_result and last_result.face_landmarks:
+                    # TODO: apply EVM here
                     process_frame(frame_bgr, last_result.face_landmarks[0])
-
-                    # ensure signal is long enough to filter
-                    if len(green_signal_forehead) >= 30:
-
-
-                        # TODO!
-
-                        '''
-                        EVM PROCESS
-
-                        - get video frames in YIQ colorspace
-                        - obtain single gaussian pyramid level of each frame
-                        - temporal bandpass filter to obtain heart rate between 0.83 to 1.0 Hz
-                        - magnify filtered pyramid levels back
-                        - add magnified pyramid levels back to original frames
-                        - convert back to RGB / BGR color space to display 
-
-                        '''
-
-
-
-                        update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
+                
+                # update dynamic plot
+                update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
 
             # if we hit pause, use last captured frame
             else:
@@ -219,27 +211,12 @@ def main():
             # q = quit
             if key == ord('q'):
                 break
-            # TODO! when paused, ROI dissapear
             # spacebar = pause  must be clicked on open-cv frame window (face) display 
             if key == ord(' '):
                 paused = not paused
-
 
     cam.release()
     cv.destroyAllWindows()
 
 
 main()
-'''if __name__ == "__main__":
-    main()'''
-
-
-
-
-
-
-
-
-
-
-

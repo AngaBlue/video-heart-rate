@@ -20,4 +20,6 @@ https://people.csail.mit.edu/mrub/evm/ - EVM, video footage
 https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 
 
 
+ISSUES:
 
+shape/size issues with gausian pyramid when there are an odd number of frames
