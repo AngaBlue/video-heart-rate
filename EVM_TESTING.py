@@ -156,9 +156,6 @@ FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
 FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode
 
-def get_result(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int):  # type: ignore
-    global last_result
-    last_result = result
 
 def setup_face_landmarker(model_path):
     base = BaseOptions(model_asset_path=model_path)
