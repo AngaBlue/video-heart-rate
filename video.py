@@ -175,11 +175,13 @@ def main():
     model_path = os.path.join(script_dir, "face_landmarker.task")
 
     # select input for VIDEO mode (video file) with user prompt
-    choice = input("Select input: [1] light_skin or [2] dark_skin: ").strip()
+    choice = input("Select input: [1] light_skin or [2] dark_skin or [3] angus: ").strip()
     if choice == "1":
         video_file = "light_skin.mp4"
     elif choice == "2":
         video_file = "dark_skin.mp4"
+    elif choice == "3":
+        video_file = "angus.mp4"
     else:
         print("Invalid option. Exiting.")
         exit(1)
