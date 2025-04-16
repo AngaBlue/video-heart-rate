@@ -172,21 +172,21 @@ def main():
 
     # get model path
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    video_dir = os.path.join(script_dir, 'video-footage')
     model_path = os.path.join(script_dir, "face_landmarker.task")
 
     # select input for VIDEO mode (video file) with user prompt
-    choice = input("Select input: [1] light_skin or [2] dark_skin or [3] angus: ").strip()
-    if choice == "1":
-        video_file = "light_skin.mp4"
-    elif choice == "2":
-        video_file = "dark_skin.mp4"
-    elif choice == "3":
-        video_file = "angus.mp4"
-    else:
-        print("Invalid option. Exiting.")
-        exit(1)
+    print("Select input video file:")
+    files = list(os.listdir(video_dir))
+    for i, path in enumerate(files):
+        print(f"[{i + 1}] {path}")
+    choice = int(input().strip()) - 1
 
-    path = os.path.join("video-footage", video_file)
+    if choice < 0 or choice >= len(files):
+        print("Invalid choice, exiting...")
+        exit(1)
+    
+    path = os.path.join(video_dir, files[choice])
     cam = cv.VideoCapture(path)
     running_mode = VisionRunningMode.VIDEO
     use_callback = False
