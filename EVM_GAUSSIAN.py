@@ -7,9 +7,8 @@ import scipy.signal as signal
 from collections import deque
 import sys
 
-#import sys
-   #sys.path.insert(0,'/path/to/mod_directory')
 
+# TODO: fix finding path for video and model (doesnt work unless we inside video-heart rate)
 
 
 # signal storage (for ROI extraction demo)
@@ -19,7 +18,7 @@ last_result = None
 
 # EVM parameters
 ALPHA = 50.0          # magnification factor
-LEVEL = 4             # number of downscaling steps in the Gaussian pyramid
+LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.4        # low frequency cutoff in Hz 
 FREQ_HIGH = 4         # high frequency cutoff in Hz
 SCALE_FACTOR = 1.0    
@@ -67,77 +66,105 @@ def compute_downsampled_size(shape, level):
     return rows, cols
 
 
-
 def gaussian_pyramid(image, level):
-    """Obtains a single band from a Gaussian Pyramid decomposition.
-    Inputs: 
-        image - single RGB image (float or uint8) with shape (rows, cols, 3)
-        level - number of pyramid levels
-    Outputs:
-        pyramid - Array of shape (3, rows//(2**level), cols//(2**level))
-                  containing the final Gaussian pyramid level (for each color channel)
+    """
+    Creates array of shape (3, rows//(2**level), cols//(2**level)) containing the final 
+    Gaussian pyramid level (for each color channel)
     """
 
     rows, cols = compute_downsampled_size(image.shape, level)
     colors = image.shape[2]
     pyramid = np.zeros((colors, rows, cols))
     
-    for i in range(level):
+    # apply gaussian downsampling "level" times
+    for _ in range(level):
         image = cv2.pyrDown(image)
+    # reshape into (channels, rows, cols), required for temporal filtering
     for c in range(colors):
         pyramid[c, :, :] = image[:, :, c]
     return pyramid
 
+def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
+    """
+    Reconstruct video: upsample each gaussian pyramid level and add back to original signal
+    """ 
+    width = rgb_frames[0].shape[1]
+    height = rgb_frames[0].shape[0]
 
-def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
-    # use the compute_downsampled_size function to get the exact dimensions.
-    rows, cols = compute_downsampled_size(rgb_frames[0].shape, level)
-    colors = rgb_frames[0].shape[2]
-    num_frames = len(rgb_frames)
-    pyramid_stack = np.zeros((num_frames, colors, rows, cols))
-    
-    # convert frames to YIQ colorspace (normalize by 255)
-    frames = [rgb2yiq(frame / 255.0) for frame in rgb_frames]
-    
-    # temporal filtering: design ideal bandpass FIR filter.
+    magnified = []
+    for i in range(num_frames):
+        y = yiq_frames[i][:, :, 0]
+        i = yiq_frames[i][:, :, 1]
+        q = yiq_frames[i][:, :, 2]
+
+        # resize magnified signals to original frame size
+        f_mag = cv2.resize(magnified_pyramid[i, 0, :, :], (width, height))
+        i_mag = cv2.resize(magnified_pyramid[i, 1, :, :], (width, height))
+        q_mag = cv2.resize(magnified_pyramid[i, 2, :, :], (width, height))
+
+        # combine original signal with magnified signal 
+        mag_frame = np.dstack((
+            y + f_mag,
+            i + i_mag,
+            q + q_mag,
+        ))
+        # YIQ -> RGB
+        mag_frame = inv_colorspace(mag_frame)
+        magnified.append(mag_frame)
+
+    return magnified
+
+
+def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
+    """
+    Creates a temporal bandpass filter in the frequency domain
+    """
+    # create FIR filter in time domain
     bandpass = signal.firwin(numtaps=num_frames,
                              cutoff=(freq_lo, freq_hi),
                              fs=fs,
                              pass_zero=False)
+    # convert to frequency domain
     transfer_function = np.fft.fft(np.fft.ifftshift(bandpass))
+    # reshape for broadcasting over video frames
     transfer_function = transfer_function[:, None, None, None].astype(np.complex64)
+
+    return transfer_function
+
+
+
+def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
+    """
+    perform EVM for color-based amplification
+    """
+    # initialise variables
+    num_frames = len(rgb_frames)
+    rows, cols = compute_downsampled_size(rgb_frames[0].shape, level)
+    colors = rgb_frames[0].shape[2]
+    pyramid_stack = np.zeros((num_frames, colors, rows, cols))
+    
+    # convert frames to YIQ colorspace (normalize by 255)
+    yiq_frames = [rgb2yiq(frame / 255.0) for frame in rgb_frames]
+    
+    # temporal filtering: design ideal bandpass FIR filter.
+    transfer_function = bandpass_fir(num_frames, fs, freq_lo, freq_hi)
     
     # build Gaussian pyramid for each frame.
-    for i, frame in enumerate(frames):
+    for i, frame in enumerate(yiq_frames):
         pyramid = gaussian_pyramid(frame, level)
-        pyramid_stack[i, :, :, :] = pyramid  # Now dimensions match
+        pyramid_stack[i, :, :, :] = pyramid  
     
-    # apply temporal filtering in the frequency domain.
+    # apply temporal filtering in the frequency domain to most downsampled layer
     pyr_stack_fft = np.fft.fft(pyramid_stack, axis=0).astype(np.complex64)
     filtered_pyramid = np.fft.ifft(pyr_stack_fft * transfer_function, axis=0).real
     
     # magnify the filtered signal.
-    magnified_pyramid = filtered_pyramid * alpha
+    magnified_pyramid = filtered_pyramid * alpha # alpha = 1
     
     # reconstruct video: upsample each pyramid level and add back to original signal.
-    magnified = []
-    for i in range(num_frames):
-        y_chan = frames[i][:, :, 0]
-        i_chan = frames[i][:, :, 1]
-        q_chan = frames[i][:, :, 2]
-    
-        fy_chan = cv2.resize(magnified_pyramid[i, 0, :, :], (rgb_frames[0].shape[1], rgb_frames[0].shape[0]))
-        fi_chan = cv2.resize(magnified_pyramid[i, 1, :, :], (rgb_frames[0].shape[1], rgb_frames[0].shape[0]))
-        fq_chan = cv2.resize(magnified_pyramid[i, 2, :, :], (rgb_frames[0].shape[1], rgb_frames[0].shape[0]))
-    
-        mag_frame = np.dstack((
-            y_chan + fy_chan,
-            i_chan + fi_chan,
-            q_chan + fq_chan,
-        ))
-        mag_frame = inv_colorspace(mag_frame)
-        magnified.append(mag_frame)
-    return magnified
+    magnified_video = reconstruct_video(num_frames, yiq_frames,rgb_frames, magnified_pyramid)
+
+    return magnified_video
 
 
 ###############################
@@ -166,6 +193,7 @@ def setup_face_landmarker(model_path):
     )
     return FaceLandmarker.create_from_options(options)
 
+
 def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bottom_ratio):
     """Calculates the ROI relative to the face bounding box."""
     roi_y1 = int(bb_y1 + top_ratio * (bb_y2 - bb_y1))
@@ -174,9 +202,11 @@ def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bott
     roi_x2 = int(bb_x2 - horizontal_ratio * (bb_x2 - bb_x1))
     return roi_x1, roi_y1, roi_x2, roi_y2
 
+
 def get_avg_green(roi):
     """Returns the average green channel value (assumes ROI in BGR format)."""
     return np.mean(roi[:, :, 1])
+
 
 def process_frame(frame_bgr, landmarks):
     """
@@ -202,6 +232,7 @@ def process_frame(frame_bgr, landmarks):
     avg_green = get_avg_green(roi_forehead)
     raw_roi_signal.append(avg_green)
 
+
 def draw_roi_on_frame(frame, bb, roi_coords):
     """
     Draws the face bounding box (green) and ROI (blue) on the provided frame.
@@ -214,6 +245,7 @@ def draw_roi_on_frame(frame, bb, roi_coords):
         cv2.rectangle(out_frame, (roi_coords[0], roi_coords[1]),
                       (roi_coords[2], roi_coords[3]), (255, 0, 0), 2)
     return out_frame
+
 
 def extract_roi_signal(frames, roi_coords):
     """
@@ -230,7 +262,6 @@ def extract_roi_signal(frames, roi_coords):
         else:
             signal_values.append(0)
     return signal_values
-
 
 
 # TODO
@@ -269,6 +300,7 @@ def main():
     fps = cap.get(cv2.CAP_PROP_FPS)
 
     landmarker = setup_face_landmarker(model_path)
+
 
     # process video file: capture frames and run face detection for ROI extraction.
     while True:
@@ -327,7 +359,6 @@ def main():
     plt.legend()
     plt.tight_layout()
     plt.show()
-
 
 
     
