@@ -84,6 +84,7 @@ def gaussian_pyramid(image, level):
         pyramid[c, :, :] = image[:, :, c]
     return pyramid
 
+
 def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
     """
     Reconstruct video: upsample each gaussian pyramid level and add back to original signal
@@ -92,15 +93,15 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
     height = rgb_frames[0].shape[0]
 
     magnified = []
-    for i in range(num_frames):
-        y = yiq_frames[i][:, :, 0]
-        i = yiq_frames[i][:, :, 1]
-        q = yiq_frames[i][:, :, 2]
+    for _ in range(num_frames):
+        y = yiq_frames[_][:, :, 0]
+        i = yiq_frames[_][:, :, 1]
+        q = yiq_frames[_][:, :, 2]
 
         # resize magnified signals to original frame size
-        f_mag = cv2.resize(magnified_pyramid[i, 0, :, :], (width, height))
-        i_mag = cv2.resize(magnified_pyramid[i, 1, :, :], (width, height))
-        q_mag = cv2.resize(magnified_pyramid[i, 2, :, :], (width, height))
+        f_mag = cv2.resize(magnified_pyramid[_, 0, :, :], (width, height))
+        i_mag = cv2.resize(magnified_pyramid[_, 1, :, :], (width, height))
+        q_mag = cv2.resize(magnified_pyramid[_, 2, :, :], (width, height))
 
         # combine original signal with magnified signal 
         mag_frame = np.dstack((
@@ -130,7 +131,6 @@ def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
     transfer_function = transfer_function[:, None, None, None].astype(np.complex64)
 
     return transfer_function
-
 
 
 def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
