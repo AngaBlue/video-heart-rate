@@ -359,8 +359,7 @@ def main():
     rgb_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in video_frames]
     
     # apply EVM (color magnification) to the entire sequence.
-    magnified_rgb_frames = mag_colors(rgb_frames, fps, freq_lo=FREQ_LOW,
-                                      freq_hi=FREQ_HIGH, level=LEVEL)
+    magnified_rgb_frames = mag_colors(rgb_frames, fps, freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL)
     
     # convert magnified frames (which are in RGB) back to BGR for display.
     magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
@@ -372,8 +371,7 @@ def main():
     raw_signal = extract_roi_signal(video_frames, final_roi_coords)
     evm_signal = extract_roi_signal(magnified_bgr_frames, final_roi_coords)
 
-    
-    # TODO: calculate bpm  
+    # calculate heart rate bpm 
     print(f"raw signal: {calculate_bpm(raw_signal, fps):.1f} bpm")
     print(f"magnified signal: {calculate_bpm(evm_signal, fps):.1f} bpm")
 
