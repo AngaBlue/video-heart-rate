@@ -35,7 +35,7 @@ ALPHA_I = 40 # R and G
 ALPHA_Q = 40 # B and R 
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.7  # 42 BPM
-FREQ_HIGH = 2 # 120 BPM (MIT USES 0.5 to 3 HZ)
+FREQ_HIGH = 2 # 120 BPM (MIT USES 0.5 to 3 HZ, best results 0.8 - 1)
 SCALE_FACTOR = 1.0    
 
 ###########################
