@@ -302,9 +302,12 @@ def calculate_bpm(signal, fps):
     sig = np.asarray(signal, dtype=float) 
     sig -= np.mean(sig) # so peak detection isn’t biased by a wandering baseline
 
+    # only count strong prominent peaks
+    prominence = np.std(sig) * 0.5 # TODO: tweak this
+
     # detect local maxima at least 0.4 s apart  
     min_distance = int(0.4 * fps)
-    peaks, _ = sp.find_peaks(sig, distance=min_distance)
+    peaks, _ = sp.find_peaks(sig, distance=min_distance, prominence=prominence)
 
     # time (in seconds) between successive peaks
     intervals = np.diff(peaks) / fps
