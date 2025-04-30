@@ -31,11 +31,11 @@ last_result = None
 
 # EVM parameters
 ALPHA_Y = 1  # luminance   
-ALPHA_I = 20 # R and G (try 40 and 40 vs 20 and 40)
-ALPHA_Q = 40 # B and R
+ALPHA_I = 40 # R and G 
+ALPHA_Q = 40 # B and R 
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.7  # 42 BPM
-FREQ_HIGH = 2.5 # 150 BPM (MIT USES 0.5 to 3 HZ)
+FREQ_HIGH = 2 # 120 BPM (MIT USES 0.5 to 3 HZ)
 SCALE_FACTOR = 1.0    
 
 ###########################
@@ -133,17 +133,17 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
     return magnified
 
 
-def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
+def bandpass_fir(num_frames, fps, freq_lo, freq_hi):
     """
     Creates a bandpass filter in the frequency domain using a FIR filter.
     """
 
-    # time-domain FIR filter
+    # time-domain FIR filter, assumes centered and symmetric
     fir_kernel = sp.firwin(
-        numtaps=num_frames,               # filter length = number of frames
+        numtaps=num_frames,               
         cutoff=(freq_lo, freq_hi),        # passband frequency range (in Hz)
-        fs=fs,                            # sampling frequency
-        pass_zero=False                   # this creates a bandpass filter
+        fs=fps,                           # sampling frequency
+        pass_zero=False                   # bandpass filter
     )
 
     # shift zero-frequency (center of impulse) to beginning: 
