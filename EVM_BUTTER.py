@@ -31,7 +31,7 @@ last_result = None
 
 # EVM parameters
 ALPHA_Y = 1  # luminance   
-ALPHA_I = 20 # R and G (try 40 and 40 vs 20 and 40)
+ALPHA_I = 20 # R and G
 ALPHA_Q = 40 # B and R
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.7  # 42 BPM
@@ -54,13 +54,11 @@ def rgb2yiq(rgb):
     yiq = np.dstack((y.squeeze(), i, q))
     return yiq
 
-
 def bgr2yiq(bgr):
     """Converts a BGR image to float32 YIQ."""
     rgb = np.float32(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
     yiq = rgb2yiq(rgb / 255)  # normalize to [0,1]
     return yiq
-
 
 def yiq2rgb(yiq):
     """Converts a YIQ image to RGB.
@@ -133,24 +131,17 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
     return magnified
 
 
-def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
-    """
-    Creates a bandpass filter in the frequency domain between FREQ_LOW and FREQ_HIGH
-    """
-    # create FIR filter in time domain
-    bandpass = sp.firwin(numtaps=num_frames,
-                             cutoff=(freq_lo, freq_hi),
-                             fs=fs,
-                             pass_zero=False) # bandpass
-    # convert to frequency domain
-    transfer_function = np.fft.fft(np.fft.ifftshift(bandpass))
-    # reshape for video frames
-    transfer_function = transfer_function[:, None, None, None].astype(np.complex64)
 
-    return transfer_function
+def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=5):
+    nyquist = 0.5 * fps
+    low = freq_lo / nyquist
+    high = freq_high / nyquist
+    b, a = sp.butter(order, [low, high], btype='band')
+    filtered = sp.filtfilt(b, a, signal, axis=0) # eliminates delay/lag by filtering fwd and bwd
+    return filtered
 
 
-def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level):
+def mag_colors(rgb_frames, fps, freq_lo, freq_hi, level):
     """
     perform EVM for color-based amplification
     """
@@ -168,14 +159,16 @@ def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level):
         pyramid = gaussian_pyramid(frame, level)
         pyramid_stack[i, :, :, :] = pyramid  
 
-    # convert to frequency domain
-    pyr_stack_fft = np.fft.fft(pyramid_stack, axis=0).astype(np.complex64)
+    # reshape pyramid_stack: (T, C, H, W) → (T, C*H*W)
+    T, C, H, W = pyramid_stack.shape
+    flat = pyramid_stack.reshape(T, -1)
 
-     # ideal bandpass filter: accept signals at our desired heart rate band and reject signals at all other bands
-    transfer_function = bandpass_fir(num_frames, fs, freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH)
+    # apply filter across time axis 
+    flat_filtered = bandpass_butterworth(flat, fps, freq_lo, freq_hi)
 
-    # apply temporal filtering in the frequency domain to most downsampled layer and convert back to time domain
-    filtered_pyramid = np.fft.ifft(pyr_stack_fft * transfer_function, axis=0).real
+    # reshape back to (T, C, H, W)
+    filtered_pyramid = flat_filtered.reshape(T, C, H, W)
+
 
     # magnify the filtered signal
     magnified_pyramid = np.stack([
