@@ -135,19 +135,29 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
 
 def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
     """
-    Creates a bandpass filter in the frequency domain between FREQ_LOW and FREQ_HIGH
+    Creates a bandpass filter in the frequency domain using a FIR filter.
     """
-    # create FIR filter in time domain
-    bandpass = sp.firwin(numtaps=num_frames,
-                             cutoff=(freq_lo, freq_hi),
-                             fs=fs,
-                             pass_zero=False) # bandpass
-    # convert to frequency domain
-    transfer_function = np.fft.fft(np.fft.ifftshift(bandpass))
-    # reshape for video frames
-    transfer_function = transfer_function[:, None, None, None].astype(np.complex64)
+
+    # time-domain FIR filter
+    fir_kernel = sp.firwin(
+        numtaps=num_frames,               # filter length = number of frames
+        cutoff=(freq_lo, freq_hi),        # passband frequency range (in Hz)
+        fs=fs,                            # sampling frequency
+        pass_zero=False                   # this creates a bandpass filter
+    )
+
+    # shift zero-frequency (center of impulse) to beginning: 
+    # center aligned to t=0 for FFT 
+    fir_kernel_shifted = np.fft.ifftshift(fir_kernel)
+
+    # convert filter to frequency domain using FFT
+    frequency_response = np.fft.fft(fir_kernel_shifted)
+
+    # reshape for broadcasting to 4D video tensor (T x C x H x W)
+    transfer_function = frequency_response[:, None, None, None].astype(np.complex64)
 
     return transfer_function
+
 
 
 def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level):
