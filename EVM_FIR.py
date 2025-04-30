@@ -146,8 +146,7 @@ def bandpass_fir(num_frames, fps, freq_lo, freq_hi):
         pass_zero=False                   # bandpass filter
     )
 
-    # shift zero-frequency (center of impulse) to beginning: 
-    # center aligned to t=0 for FFT 
+    # shift zero-frequency (center of impulse) to beginning: center aligned to t=0 for FFT 
     fir_kernel_shifted = np.fft.ifftshift(fir_kernel)
 
     # convert filter to frequency domain using FFT
@@ -157,6 +156,7 @@ def bandpass_fir(num_frames, fps, freq_lo, freq_hi):
     transfer_function = frequency_response[:, None, None, None].astype(np.complex64)
 
     return transfer_function
+
 
 
 
@@ -287,6 +287,10 @@ def extract_roi_signal(frames, roi_coords):
 
 
 
+###############################
+#          Calculations       #
+###############################
+
 
 # TODO:does find peaks work???
 def calculate_bpm(signal, fps):
@@ -306,9 +310,6 @@ def calculate_bpm(signal, fps):
     intervals = np.diff(peaks) / fps
 
     return 60.0 / intervals.mean()
-
-    
-
 
 
 

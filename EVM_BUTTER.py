@@ -271,6 +271,10 @@ def extract_roi_signal(frames, roi_coords):
 
 
 
+###############################
+#          Calculations       #
+###############################
+
 # TODO:does find peaks work???
 def calculate_bpm(signal, fps):
     """
