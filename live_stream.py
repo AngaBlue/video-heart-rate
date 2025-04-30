@@ -7,7 +7,8 @@ import time
 import scipy.signal as sp_sigal
 from collections import deque
 from glob import glob
-import colorsys 
+import colorsys
+
 
 # signal storage
 green_signal_forehead = deque(maxlen=300) # we dont need old frames
@@ -126,7 +127,7 @@ EVM PROCESS from MIT paper
 - convert back to RGB / BGR color space to display
 '''
 
-#def evm(frame_bgr):
+
 
 def main():
 
@@ -152,6 +153,9 @@ def main():
     model_path = os.path.join(script_dir, "face_landmarker.task")
 
     # select input for LIVE STREAM mode (webcam)
+
+    # 0 = ahila iphone - need to plug in iphone
+    # 1 = webcam
     cam = cv.VideoCapture(0)
     if not cam.isOpened():
         print("error: could not open webcam.")
@@ -165,6 +169,8 @@ def main():
         while True:
             if not paused:    
                 ret, frame_bgr = cam.read()
+               
+
                 # video sampling rate
                 fs = cam.get(cv.CAP_PROP_FPS) # some webcams may give incorrect fps
 
@@ -217,6 +223,7 @@ def main():
 
     cam.release()
     cv.destroyAllWindows()
+
 
 
 main()

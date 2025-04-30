@@ -3,12 +3,25 @@ import mediapipe as mp
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.signal as signal
+import scipy.signal as sp
 from collections import deque
 import sys
 
 
 # TODO: fix finding path for video and model (doesnt work unless we inside video-heart rate)
+
+
+# global variables to store ROI data and final detection parameters.
+raw_roi_signal = []       # raw ROI (forehead) green channel values (one per frame)
+final_bb = None           # final detected face bounding box (x1, y1, x2, y2)
+final_roi_coords = None   # final ROI coordinates (x1, y1, x2, y2)
+
+# MediaPipe setup
+BaseOptions = mp.tasks.BaseOptions
+FaceLandmarker = mp.tasks.vision.FaceLandmarker
+FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
+FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
+VisionRunningMode = mp.tasks.vision.RunningMode
 
 
 # signal storage (for ROI extraction demo)
@@ -17,14 +30,16 @@ green_signal_cheek = deque(maxlen=500)
 last_result = None
 
 # EVM parameters
-ALPHA = 50.0          # magnification factor
+ALPHA_Y = 1  # luminance   
+ALPHA_I = 40 # R and G
+ALPHA_Q = 40 # B and R
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
-FREQ_LOW = 0.4        # low frequency cutoff in Hz 
-FREQ_HIGH = 4         # high frequency cutoff in Hz
+FREQ_LOW = 0.7  # 42 BPM
+FREQ_HIGH = 2.5 # 150 BPM (MIT USES 0.5 to 3 HZ)
 SCALE_FACTOR = 1.0    
 
 ###########################
-#   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag
+#   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag AND https://people.csail.mit.edu/mrub/evm/
 ###########################
 
 
@@ -118,22 +133,22 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
 
 def bandpass_fir(num_frames, fs, freq_lo, freq_hi):
     """
-    Creates a temporal bandpass filter in the frequency domain
+    Creates a bandpass filter in the frequency domain between FREQ_LOW and FREQ_HIGH
     """
     # create FIR filter in time domain
-    bandpass = signal.firwin(numtaps=num_frames,
+    bandpass = sp.firwin(numtaps=num_frames,
                              cutoff=(freq_lo, freq_hi),
                              fs=fs,
-                             pass_zero=False)
+                             pass_zero=False) # bandpass
     # convert to frequency domain
     transfer_function = np.fft.fft(np.fft.ifftshift(bandpass))
-    # reshape for broadcasting over video frames
+    # reshape for video frames
     transfer_function = transfer_function[:, None, None, None].astype(np.complex64)
 
     return transfer_function
 
 
-def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
+def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level):
     """
     perform EVM for color-based amplification
     """
@@ -146,20 +161,25 @@ def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
     # convert frames to YIQ colorspace (normalize by 255)
     yiq_frames = [rgb2yiq(frame / 255.0) for frame in rgb_frames]
     
-    # temporal filtering: design ideal bandpass FIR filter.
-    transfer_function = bandpass_fir(num_frames, fs, freq_lo, freq_hi)
-    
     # build Gaussian pyramid for each frame.
     for i, frame in enumerate(yiq_frames):
         pyramid = gaussian_pyramid(frame, level)
         pyramid_stack[i, :, :, :] = pyramid  
-    
-    # apply temporal filtering in the frequency domain to most downsampled layer
+
+    # convert to frequency domain
     pyr_stack_fft = np.fft.fft(pyramid_stack, axis=0).astype(np.complex64)
+
+     # ideal bandpass filter: accept signals at our desired heart rate band and reject signals at all other bands
+    transfer_function = bandpass_fir(num_frames, fs, freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH)
+
+    # apply temporal filtering in the frequency domain to most downsampled layer and convert back to time domain
     filtered_pyramid = np.fft.ifft(pyr_stack_fft * transfer_function, axis=0).real
-    
-    # magnify the filtered signal.
-    magnified_pyramid = filtered_pyramid * alpha # alpha = 1
+
+    # magnify the filtered signal
+    magnified_pyramid = np.stack([
+        filtered_pyramid[:, 0, :, :] * ALPHA_Y,
+        filtered_pyramid[:, 1, :, :] * ALPHA_I,
+        filtered_pyramid[:, 2, :, :] * ALPHA_Q], axis=1)
     
     # reconstruct video: upsample each pyramid level and add back to original signal.
     magnified_video = reconstruct_video(num_frames, yiq_frames,rgb_frames, magnified_pyramid)
@@ -171,17 +191,6 @@ def mag_colors(rgb_frames, fs, freq_lo, freq_hi, level, alpha):
 #   Face Detection and ROI    #
 ###############################
 
-# global variables to store ROI data and final detection parameters.
-raw_roi_signal = []       # raw ROI (forehead) green channel values (one per frame)
-final_bb = None           # final detected face bounding box (x1, y1, x2, y2)
-final_roi_coords = None   # final ROI coordinates (x1, y1, x2, y2)
-
-# MediaPipe setup
-BaseOptions = mp.tasks.BaseOptions
-FaceLandmarker = mp.tasks.vision.FaceLandmarker
-FaceLandmarkerOptions = mp.tasks.vision.FaceLandmarkerOptions
-FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
-VisionRunningMode = mp.tasks.vision.RunningMode
 
 
 def setup_face_landmarker(model_path):
@@ -210,10 +219,9 @@ def get_avg_green(roi):
 
 def process_frame(frame_bgr, landmarks):
     """
-    For a given frame and detected face landmarks, compute the face bounding box,
-    define a forehead ROI, and record its average green value.
+    For a given frame and detected face landmarks, compute the face bounding box and define ROI
     """
-    global final_bb, final_roi_coords, raw_roi_signal
+    global final_roi_coords, raw_roi_signal
     h, w, _ = frame_bgr.shape
     x_vals = [lm.x for lm in landmarks]
     y_vals = [lm.y for lm in landmarks]
@@ -221,16 +229,17 @@ def process_frame(frame_bgr, landmarks):
     bb_y1 = int(min(y_vals) * h)
     bb_x2 = int(max(x_vals) * w)
     bb_y2 = int(max(y_vals) * h)
-    final_bb = (bb_x1, bb_y1, bb_x2, bb_y2)
     
+    # cheek: 0.15, 0.4, 0.65
+    # forehead: 0.25, 0.00, 0.25
     roi_coords = get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2,
-                                horizontal_ratio=0.25,
-                                top_ratio=0.0,
-                                bottom_ratio=0.25)
+                                horizontal_ratio=0.15,
+                                top_ratio=0.4,
+                                bottom_ratio=0.65)
+    
     final_roi_coords = roi_coords
-    roi_forehead = frame_bgr[roi_coords[1]:roi_coords[3], roi_coords[0]:roi_coords[2]]
-    avg_green = get_avg_green(roi_forehead)
-    raw_roi_signal.append(avg_green)
+    roi = frame_bgr[roi_coords[1]:roi_coords[3], roi_coords[0]:roi_coords[2]]
+    raw_roi_signal.append(roi)
 
 
 def draw_roi_on_frame(frame, bb, roi_coords):
@@ -264,9 +273,30 @@ def extract_roi_signal(frames, roi_coords):
     return signal_values
 
 
-# TODO
+
+
+
+# TODO:does find peaks work???
 def calculate_bpm(signal, fps):
-   pass
+    """
+    Basic BPM estiamation, not sure if this is actually right for our evm heart rate system
+    """
+
+    # convert to NumPy array and remove 0 Hz component 
+    sig = np.asarray(signal, dtype=float) 
+    sig -= np.mean(sig) # so peak detection isn’t biased by a wandering baseline
+
+    # detect local maxima at least 0.4 s apart  
+    min_distance = int(0.4 * fps)
+    peaks, _ = sp.find_peaks(sig, distance=min_distance)
+
+    # time (in seconds) between successive peaks
+    intervals = np.diff(peaks) / fps
+
+    return 60.0 / intervals.mean()
+
+    
+
 
 
 
@@ -301,7 +331,6 @@ def main():
 
     landmarker = setup_face_landmarker(model_path)
 
-
     # process video file: capture frames and run face detection for ROI extraction.
     while True:
         ret, frame = cap.read()
@@ -329,7 +358,8 @@ def main():
     
     # apply EVM (color magnification) to the entire sequence.
     magnified_rgb_frames = mag_colors(rgb_frames, fps, freq_lo=FREQ_LOW,
-                                      freq_hi=FREQ_HIGH, level=LEVEL, alpha=ALPHA)
+                                      freq_hi=FREQ_HIGH, level=LEVEL)
+    
     # convert magnified frames (which are in RGB) back to BGR for display.
     magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
     
@@ -339,7 +369,13 @@ def main():
         sys.exit(1)
     raw_signal = extract_roi_signal(video_frames, final_roi_coords)
     evm_signal = extract_roi_signal(magnified_bgr_frames, final_roi_coords)
+
     
+    # TODO: calculate bpm  
+    print(f"raw signal: {calculate_bpm(raw_signal, fps):.1f} bpm")
+    print(f"magnified signal: {calculate_bpm(evm_signal, fps):.1f} bpm")
+
+
     # display original and EVM processed frames side by side 
     for orig, evm in zip(video_frames, magnified_bgr_frames):
         # combine the original and processed frames horizontally.
@@ -362,6 +398,5 @@ def main():
 
 
     
+main()
 
-if __name__ == "__main__":
-    main()
