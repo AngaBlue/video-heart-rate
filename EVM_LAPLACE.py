@@ -31,15 +31,18 @@ last_result = None
 
 # EVM parameters
 ALPHA_Y = 1  # luminance   
-ALPHA_I = 40 # R and G
-ALPHA_Q = 40 # B and R
+ALPHA_I = 40 # R and G 
+ALPHA_Q = 40 # B and R 
+CUTOFF=1000 # spatial cutoff
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
-FREQ_LOW = 0.7  # 42 BPM
-FREQ_HIGH = 2 # 120 BPM (MIT USES 0.5 to 3 HZ, best results 0.8 - 1)
+FREQ_LOW = 0.8  # 42 BPM
+FREQ_HIGH = 1 # 120 BPM (MIT USES 0.5 to 3 HZ, best results 0.8 - 1)
+
+# why is this doingggg 
 SCALE_FACTOR = 1.0    
 
 ###########################
-#   Color Magnification   # CITATION: https://github.com/itberrios/CV_projects/tree/main/color_mag AND https://people.csail.mit.edu/mrub/evm/
+#   Color Magnification   # CITATION: https://hbenbel.github.io/blog/evm/ AND https://people.csail.mit.edu/mrub/evm/
 ###########################
 
 
@@ -54,11 +57,13 @@ def rgb2yiq(rgb):
     yiq = np.dstack((y.squeeze(), i, q))
     return yiq
 
+
 def bgr2yiq(bgr):
     """Converts a BGR image to float32 YIQ."""
     rgb = np.float32(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
     yiq = rgb2yiq(rgb / 255)  # normalize to [0,1]
     return yiq
+
 
 def yiq2rgb(yiq):
     """Converts a YIQ image to RGB.
@@ -73,65 +78,35 @@ def yiq2rgb(yiq):
 inv_colorspace = lambda x: cv2.normalize(yiq2rgb(x), None, 0, 255, cv2.NORM_MINMAX, cv2.CV_8UC3)
 
 
-def compute_downsampled_size(shape, level):
-    rows, cols, _ = shape
-    for _ in range(level):
-        rows = (rows + 1) // 2
-        cols = (cols + 1) // 2
-    return rows, cols
 
-
-def gaussian_pyramid(image, level):
+def laplacian_video(video_stack, level):
     """
-    Creates array of shape (3, rows//(2**level), cols//(2**level)) containing the final 
-    Gaussian pyramid level (for each color channel)
+    Create Laplacian pyramid for a video stack of 2d shape  -> [num_frames, H, W, C]
     """
 
-    rows, cols = compute_downsampled_size(image.shape, level)
-    colors = image.shape[2]
-    pyramid = np.zeros((colors, rows, cols))
+    laplace_video = [[] for _ in range(level)]
+
+    for frame in video_stack:
+        gaussian = frame.copy()
+        g_pyramid = [gaussian]
+
+        for _ in range(1, level):
+            gaussian = cv2.pyrDown(gaussian)
+            g_pyramid.append(gaussian)
+
+        for n in range(level - 1):
+            size = (g_pyramid[n].shape[1], g_pyramid[n].shape[0])
+            laplace = g_pyramid[n] - cv2.pyrUp(g_pyramid[n + 1], dstsize=size)
+            laplace_video[n].append(laplace)
+
+        laplace_video[-1].append(g_pyramid[-1])  # coarsest (last Gaussian level)
+
+
+    return laplace_video
+
+
+
     
-    # apply gaussian downsampling "level" times
-    for _ in range(level):
-        image = cv2.pyrDown(image)
-    # reshape into (channels, rows, cols), required for temporal filtering
-    for c in range(colors):
-        pyramid[c, :, :] = image[:, :, c]
-    return pyramid
-
-
-def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
-    """
-    Reconstruct video: upsample each gaussian pyramid level and add back to original signal
-    """ 
-    width = rgb_frames[0].shape[1]
-    height = rgb_frames[0].shape[0]
-
-    magnified = []
-    for _ in range(num_frames):
-        y = yiq_frames[_][:, :, 0]
-        i = yiq_frames[_][:, :, 1]
-        q = yiq_frames[_][:, :, 2]
-
-        # resize magnified signals to original frame size
-        f_mag = cv2.resize(magnified_pyramid[_, 0, :, :], (width, height))
-        i_mag = cv2.resize(magnified_pyramid[_, 1, :, :], (width, height))
-        q_mag = cv2.resize(magnified_pyramid[_, 2, :, :], (width, height))
-
-        # combine original signal with magnified signal 
-        mag_frame = np.dstack((
-            y + f_mag,
-            i + i_mag,
-            q + q_mag,
-        ))
-        # YIQ -> RGB
-        mag_frame = inv_colorspace(mag_frame)
-        magnified.append(mag_frame)
-
-    return magnified
-
-
-
 def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=1):
     '''
     Calculate the Butterworth bandpass filter
@@ -144,46 +119,132 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=1):
     return filtered
 
 
+"""
+from MIT website
 
-def mag_colors(rgb_frames, fps, freq_lo, freq_hi, level):
+To process an input video by Eulerian video magnification, there
+are four steps a user needs to take: 
+(1) select a temporal bandpass filter; 
+(2) select an amplification factor, α; 
+(3) select a spatial frequency cutoff (specified by spatial wavelength, λc) beyond which
+an attenuated version of α is used; and 
+(4) select the form of the attenuation for α—either force α to zero for all λ < λc, or linearly
+scale α down to zero. The frequency band of interest can be chosen automatically in some cases, but it is often important for users
+to be able to control the frequency band corresponding to their application. 
+
+"""
+def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,freq_lo, freq_hi, level, cutoff, alpha):
+
+    """
+    DEFAULT VALUES
+    alpha = 100
+    spatial frequency cutoff = 1000 < spatial wavelength
+    low freq = 0.833
+    high freq = 1
+    scaling factor = alphha (for I and Q) = 1
+
+    """
+
+    filtered_video = []
+    # spatial wavelength at current pyramid level, halve each level
+    lambda_c = (vidWidth ** 2 + vidHeight ** 2) ** 0.5
+    #  threshold spatial variation used to determine how much to amplify a particular level.
+    delta = cutoff / 8 / (1 + alpha)
+
+    for n in range(level):
+        #  per-level amplification factor 
+        current_alpha = lambda_c / 8 / delta - 1
+        filtered = bandpass_butterworth(laplace_video_pyramid[n], fps, freq_lo, freq_hi, order=1)
+
+        # zero out top and bottom levels
+        if n == 0 or n == level - 1:
+            filtered *= 0
+        else:
+            if current_alpha > alpha:
+                filtered *= alpha
+            else:
+                filtered *= 0
+
+        filtered_video.append(filtered)
+        lambda_c /= 2  
+
+    return filtered_video
+
+
+
+
+def reconstruct_video(filtered_video_pyramid, level):
+    """
+    Reconstructs a video from its filtered Laplacian pyramid of shape [num_frames, H, W, C]
+    """
+
+    num_frames = filtered_video_pyramid[0].shape[0]
+    reconstructed_video = np.empty_like(filtered_video_pyramid[0])
+
+    for frame_idx in range(num_frames):
+        # start with the coarsest level (smallest spatial resolution)
+        reconstructed_frame = filtered_video_pyramid[-1][frame_idx]
+
+        # iteratively upsample and add finer detail from higher levels
+        for level in reversed(range(1, level)):
+            target_shape = (
+                filtered_video_pyramid[level - 1][frame_idx].shape[1],  # width
+                filtered_video_pyramid[level - 1][frame_idx].shape[0]   # height
+            )
+            upsampled = cv2.pyrUp(reconstructed_frame, dstsize=target_shape)
+            reconstructed_frame = upsampled + filtered_video_pyramid[level - 1][frame_idx]
+
+        # Save reconstructed frame
+        reconstructed_video[frame_idx] = reconstructed_frame
+
+    return reconstructed_video
+
+
+
+
+
+def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
     """
     perform EVM for color-based amplification
     """
     # initialise variables
     num_frames = len(rgb_frames)
-    rows, cols = compute_downsampled_size(rgb_frames[0].shape, level)
-    colors = rgb_frames[0].shape[2]
-    pyramid_stack = np.zeros((num_frames, colors, rows, cols))
-    
+
     # convert frames to YIQ colorspace (normalize by 255)
     yiq_frames = [rgb2yiq(frame / 255.0) for frame in rgb_frames]
+
+    # build Laplacian pyramid for each frame.
+    laplace_video_pyramid =  laplacian_video(yiq_frames, level=LEVEL)
+
+    print("laplacian pyramid complete")
+
+    filtered_video = apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,
+                                       freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL, cutoff=CUTOFF, alpha=SCALE_FACTOR)
     
-    # build Gaussian pyramid for each frame.
-    for i, frame in enumerate(yiq_frames):
-        pyramid = gaussian_pyramid(frame, level)
-        pyramid_stack[i, :, :, :] = pyramid  
+    print("butterworth filter complete")
 
-    # reshape pyramid_stack: (T, C, H, W) → (T, C*H*W)
-    T, C, H, W = pyramid_stack.shape
-    flat = pyramid_stack.reshape(T, -1)
+    result = reconstruct_video(filtered_video, level=LEVEL)
 
-    # apply filter across time axis 
-    flat_filtered = bandpass_butterworth(flat, fps, freq_lo, freq_hi)
-
-    # reshape back to (T, C, H, W)
-    filtered_pyramid = flat_filtered.reshape(T, C, H, W)
-
-
-    # magnify the filtered signal
-    magnified_pyramid = np.stack([
-        filtered_pyramid[:, 0, :, :] * ALPHA_Y,
-        filtered_pyramid[:, 1, :, :] * ALPHA_I,
-        filtered_pyramid[:, 2, :, :] * ALPHA_Q], axis=1)
+    print("reconstruction complete")
+    # chromatic attenuation
+    result[:][:][:][1] *= ALPHA_I 
+    result[:][:][:][2] *= ALPHA_Q
     
-    # reconstruct video: upsample each pyramid level and add back to original signal.
-    magnified_video = reconstruct_video(num_frames, yiq_frames,rgb_frames, magnified_pyramid)
 
-    return magnified_video
+    # add to original
+    result += yiq_frames
+
+    # convert to rgb
+    rgb_video = [inv_colorspace(frame) for frame in result]
+
+    # cutoff wrong values
+    rgb_video[rgb_video < 0] = 0
+    rgb_video[rgb_video > 255] = 255
+
+
+    return rgb_video
+    
+    
 
 
 ###############################
@@ -274,10 +335,10 @@ def extract_roi_signal(frames, roi_coords):
 
 
 
-
 ###############################
 #          Calculations       #
 ###############################
+
 
 # TODO:does find peaks work???
 def calculate_bpm(signal, fps):
@@ -301,7 +362,6 @@ def calculate_bpm(signal, fps):
 
     return 60.0 / intervals.mean()
 
-    
 
 
 
@@ -333,7 +393,10 @@ def main():
         print("Error opening video file.")
         sys.exit(1)
     
+    # process video
     fps = cap.get(cv2.CAP_PROP_FPS)
+    vidWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    vidHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     landmarker = setup_face_landmarker(model_path)
 
@@ -363,7 +426,7 @@ def main():
     rgb_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in video_frames]
     
     # apply EVM (color magnification) to the entire sequence.
-    magnified_rgb_frames = mag_colors(rgb_frames, fps, freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL)
+    magnified_rgb_frames = mag_colors(rgb_frames, fps, vidWidth, vidHeight)
     
     # convert magnified frames (which are in RGB) back to BGR for display.
     magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
@@ -374,7 +437,7 @@ def main():
         sys.exit(1)
     raw_signal = extract_roi_signal(video_frames, final_roi_coords)
     evm_signal = extract_roi_signal(magnified_bgr_frames, final_roi_coords)
-    
+
     # calculate heart rate bpm 
     print(f"raw signal: {calculate_bpm(raw_signal, fps):.1f} bpm")
     print(f"magnified signal: {calculate_bpm(evm_signal, fps):.1f} bpm")
