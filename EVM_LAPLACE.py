@@ -133,6 +133,8 @@ scale α down to zero. The frequency band of interest can be chosen automaticall
 to be able to control the frequency band corresponding to their application. 
 
 """
+
+# TODO: why is this taking SOOOO long
 def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,freq_lo, freq_hi, level, cutoff, alpha):
 
     """
@@ -173,31 +175,12 @@ def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,freq_lo, f
 
 
 
-def reconstruct_video(filtered_video_pyramid, level):
+def reconstruct_video(filtered_video, level):
     """
     Reconstructs a video from its filtered Laplacian pyramid of shape [num_frames, H, W, C]
     """
 
-    num_frames = filtered_video_pyramid[0].shape[0]
-    reconstructed_video = np.empty_like(filtered_video_pyramid[0])
-
-    for frame_idx in range(num_frames):
-        # start with the coarsest level (smallest spatial resolution)
-        reconstructed_frame = filtered_video_pyramid[-1][frame_idx]
-
-        # iteratively upsample and add finer detail from higher levels
-        for level in reversed(range(1, level)):
-            target_shape = (
-                filtered_video_pyramid[level - 1][frame_idx].shape[1],  # width
-                filtered_video_pyramid[level - 1][frame_idx].shape[0]   # height
-            )
-            upsampled = cv2.pyrUp(reconstructed_frame, dstsize=target_shape)
-            reconstructed_frame = upsampled + filtered_video_pyramid[level - 1][frame_idx]
-
-        # Save reconstructed frame
-        reconstructed_video[frame_idx] = reconstructed_frame
-
-    return reconstructed_video
+    pass
 
 
 
@@ -226,6 +209,12 @@ def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
     result = reconstruct_video(filtered_video, level=LEVEL)
 
     print("reconstruction complete")
+
+    """
+    I FEEL LIKE U SHUD DO THIS ALL IN ONE!!!!
+    u do too much one at a time, reconstruct and amplify and add all in one function
+    
+    """
     # chromatic attenuation
     result[:][:][:][1] *= ALPHA_I 
     result[:][:][:][2] *= ALPHA_Q
@@ -238,8 +227,8 @@ def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
     rgb_video = [inv_colorspace(frame) for frame in result]
 
     # cutoff wrong values
-    rgb_video[rgb_video < 0] = 0
-    rgb_video[rgb_video > 255] = 255
+    #rgb_video[rgb_video < 0] = 0
+    #rgb_video[rgb_video > 255] = 255
 
 
     return rgb_video
