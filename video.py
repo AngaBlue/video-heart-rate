@@ -138,16 +138,26 @@ def fir_bandpass_filter(signal, fs, low, high, running_mode):
         return sp_sigal.lfilter(taps, [1.0], signal)
     
 
-'''
-EVM PROCESS from MIT paper
+def calculate_bpm(signal, fps):
+    """
+    Basic BPM estiamation, not sure if this is actually right for our evm heart rate system
+    """
 
-- get video frames in YIQ colorspace
-- obtain single gaussian pyramid level of each frame
-- temporal bandpass filter to obtain heart rate between 0.83 to 1.0 Hz
-- magnify filtered pyramid levels back
-- add magnified pyramid levels back to original frames
-- convert back to RGB / BGR color space to display
-'''
+    # convert to NumPy array and remove 0 Hz component 
+    sig = np.asarray(signal, dtype=float) 
+    sig -= np.mean(sig) # so peak detection isn’t biased by a wandering baseline
+
+    # only count strong prominent peaks
+    prominence = np.std(sig) * 0.5 # TODO: tweak this
+
+    # detect local maxima at least 0.4 s apart  
+    min_distance = int(0.4 * fps)
+    peaks, _ = sp.find_peaks(sig, distance=min_distance, prominence=prominence)
+
+    # time (in seconds) between successive peaks
+    intervals = np.diff(peaks) / fps
+
+    return 60.0 / intervals.mean()
 
 #def evm(frame_bgr):
 
@@ -197,6 +207,7 @@ def main():
         while True:
             if not paused:    
                 ret, frame_bgr = cam.read()
+                fps = cam.get(cv.CAP_PROP_FPS)
                 # video sampling rate
                 #fs = cam.get(cv.CAP_PROP_FPS) # some webcams may give incorrect fps
 
@@ -226,11 +237,14 @@ def main():
                     last_result = landmarker.detect_for_video(mp_image, timestamp)
 
                 if last_result and last_result.face_landmarks:
-                    # TODO: apply EVM here
                     process_frame(frame_bgr, last_result.face_landmarks[0])
                 
                 # update dynamic plot
                 update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
+                
+                print(calculate_bpm(green_signal_cheek, fps))
+                print(calculate_bpm(green_signal_forehead, fps))
+
             else:
                 frame_bgr = last_frame
 

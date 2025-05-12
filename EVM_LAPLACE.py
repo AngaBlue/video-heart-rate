@@ -159,33 +159,34 @@ def apply_butterworth(laplace_video_pyramid, fps, freq_lo, freq_hi, level, lambd
     delta = (lambda_cutoff / 8) / (1 + alpha)
 
 
-    for n in range(1, level-1):
+    for n in range (level):
 
         current_level = laplace_video_pyramid[n]  
         T, H, W, C = current_level.shape
-        
-        lambda_level = (H ** 2 + W ** 2) ** 0.5
-        new_alpha = (lambda_level / (8 * delta)) - 1
-        amplification = min(alpha, new_alpha)
 
-        # reshape to [T, N] where N = H * W * C
-        filtered_flat = bandpass_butterworth(current_level.reshape(-1), fps, freq_lo, freq_hi, order=1)
+        if n == 1 or n == level:
+            pass
 
-        # reshape to original size 
-        filtered_level = filtered_flat.reshape(T, H, W, C)
+        else:
 
-        # amplification factor = 100
-        filtered_level *= amplification
+            lambda_level = (H ** 2 + W ** 2) ** 0.5
+            new_alpha = (lambda_level / (8 * delta)) - 1
+            amplification = min(alpha, new_alpha)
 
-        # chrominance attentuation = 1
-        filtered_level[:, :, :, 1:] *= AMPLIFY_IQ
+            # reshape to [T, N] where N = H * W * C
+            filtered_flat = bandpass_butterworth(current_level.reshape(-1), fps, freq_lo, freq_hi, order=1)
 
-        filtered_video[n] = filtered_level
+            # reshape to original size 
+            filtered_level = filtered_flat.reshape(T, H, W, C)
 
+            # amplification factor = 100
+            filtered_level *= amplification
 
-    # zero first and last pyramid levels as per MIT instructions
-    filtered_video[0] = np.array([0])*T
-    filtered_video[level - 1] = np.array([0])*T
+            # chrominance attentuation = 1
+            filtered_level[:, :, :, 1:] *= AMPLIFY_IQ
+
+            filtered_video[n] = filtered_level
+
 
     return filtered_video
 
@@ -227,10 +228,11 @@ def mag_colors(rgb_frames, fps):
                                        freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL, lambda_cutoff=LAMBDA_CUTOFF, alpha=ALPHA)
     
     for v in filtered_video:
-        cv2.imshow(v)
-        print(v)
+        print(v.shape)
+        print(len(filtered_video))
+        return
 
-    
+
     print("butterworth filter complete")
 
     #result = reconstruct_video(filtered_video, level=LEVEL)
