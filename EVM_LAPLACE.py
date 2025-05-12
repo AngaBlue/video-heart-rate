@@ -30,16 +30,16 @@ green_signal_cheek = deque(maxlen=500)
 last_result = None
 
 # EVM parameters
-ALPHA_Y = 1  # luminance   
-ALPHA_I = 40 # R and G 
-ALPHA_Q = 40 # B and R 
-CUTOFF=1000 # spatial cutoff
+AMPLIFY_Y = 1  # luminance   
+AMPLIFY_I = 40 # R and G 
+AMPLIFY_Q = 40 # B and R 
+LAMBDA_CUTOFF = 1000 # spatial cutoff
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.8  # 42 BPM
 FREQ_HIGH = 1 # 120 BPM (MIT USES 0.5 to 3 HZ, best results 0.8 - 1)
 
 # why is this doingggg 
-SCALE_FACTOR = 1.0    
+ALPHA = 1.0    
 
 ###########################
 #   Color Magnification   # CITATION: https://hbenbel.github.io/blog/evm/ AND https://people.csail.mit.edu/mrub/evm/
@@ -81,35 +81,45 @@ inv_colorspace = lambda x: cv2.normalize(yiq2rgb(x), None, 0, 255, cv2.NORM_MINM
 
 def laplacian_video(video_stack, level):
     """
-    Create Laplacian pyramid for a video stack of 2d shape  -> [num_frames, H, W, C]
+    Create Laplacian pyramid for a video stack per level: [num_frames][H, W, C].
     """
 
-    laplace_video = [[] for _ in range(level)]
+    num_frames = len(video_stack)
 
-    for frame in video_stack:
+    # compute the shapes of each level using the first frame
+    g_pyramid = [video_stack[0].copy()]
+    for _ in range(1, level):
+        g_pyramid.append(cv2.pyrDown(g_pyramid[-1]))
+
+    level_shapes = [(img.shape[0], img.shape[1], img.shape[2]) for img in g_pyramid]
+
+    # allocate NumPy arrays for each level
+    laplace_video = [np.empty((num_frames, h, w, c), dtype=np.float32) for (h, w, c) in level_shapes]
+
+    for i, frame in enumerate(video_stack):
         gaussian = frame.copy()
         g_pyramid = [gaussian]
-
         for _ in range(1, level):
             gaussian = cv2.pyrDown(gaussian)
             g_pyramid.append(gaussian)
 
         for n in range(level - 1):
             size = (g_pyramid[n].shape[1], g_pyramid[n].shape[0])
-            laplace = g_pyramid[n] - cv2.pyrUp(g_pyramid[n + 1], dstsize=size)
-            laplace_video[n].append(laplace)
+            upsampled = cv2.pyrUp(g_pyramid[n + 1], dstsize=size)
+            laplacian = g_pyramid[n] - upsampled
+            laplace_video[n][i] = laplacian
 
-        laplace_video[-1].append(g_pyramid[-1])  # coarsest (last Gaussian level)
-
+        laplace_video[-1][i] = g_pyramid[-1]  # add coarsest level for reconstruction
 
     return laplace_video
+
 
 
 
     
 def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=1):
     '''
-    Calculate the Butterworth bandpass filter
+    Calculate the Butterworth bandpass filter, input = [T, N]
     '''
     nyquist = 0.5 * fps
     low = freq_lo / nyquist
@@ -134,43 +144,85 @@ to be able to control the frequency band corresponding to their application.
 
 """
 
-# TODO: why is this taking SOOOO long
-def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,freq_lo, freq_hi, level, cutoff, alpha):
 
+def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight, freq_lo, freq_hi, level, lambda_cutoff, alpha):
     """
-    DEFAULT VALUES
-    alpha = 100
-    spatial frequency cutoff = 1000 < spatial wavelength
-    low freq = 0.833
-    high freq = 1
-    scaling factor = alphha (for I and Q) = 1
+    Apply temporal Butterworth bandpass filter across time for each pyramid level.
+    Amplify motion based on spatial wavelength and level-specific alpha.
 
+    Parameters:
+        laplace_video_pyramid: list of NumPy arrays, one per pyramid level, shape [T, H, W, C]
+        fps: frame rate
+        vidWidth, vidHeight: resolution of the original video
+        freq_lo, freq_hi: temporal bandpass range
+        level: number of pyramid levels
+        lambda_cutoff: spatial wavelength threshold
+        alpha: amplification factor
+    Returns:
+        filtered_video: list of same shape as input, but temporally filtered and amplified
     """
 
     filtered_video = []
-    # spatial wavelength at current pyramid level, halve each level
-    lambda_c = (vidWidth ** 2 + vidHeight ** 2) ** 0.5
-    #  threshold spatial variation used to determine how much to amplify a particular level.
-    delta = cutoff / 8 / (1 + alpha)
 
+    lambda_level = (vidWidth ** 2 + vidHeight ** 2) ** 0.5
+    delta = (lambda_cutoff / 8) / (1 + alpha)
+    """ SHAPE
+    301 592 528 3
+    301 296 264 3
+    301 148 132 3
+    301 74 66 3
+    
+    """
     for n in range(level):
-        #  per-level amplification factor 
-        current_alpha = lambda_c / 8 / delta - 1
-        filtered = bandpass_butterworth(laplace_video_pyramid[n], fps, freq_lo, freq_hi, order=1)
+        current_level = laplace_video_pyramid[n]  # shape: [T, H, W, C]
+        T, H, W, C = current_level.shape
 
-        # zero out top and bottom levels
-        if n == 0 or n == level - 1:
-            filtered *= 0
-        else:
-            if current_alpha > alpha:
-                filtered *= alpha
+        print(T, H, W, C)
+    return
+
+    
+    
+    '''for n in range(level):
+        current_level = laplace_video_pyramid[n]  # shape: [T, H, W, C]
+        T, H, W, C = current_level.shape
+
+        current_alpha = (lambda_level / (8 * delta)) - 1
+        current_alpha = min(alpha, current_alpha)
+
+        # bandpass filter each channel independently
+        filtered_level = np.zeros_like(current_level)
+
+        for c in range(C):
+            signal = current_level[:, :, :, c]  # shape [T, H, W]
+            signal_reshaped = signal.reshape(T, -1)  # reshape to [T, H*W] for filtering
+
+            filtered = bandpass_butterworth(signal_reshaped, fps, freq_lo, freq_hi)
+            if 0 < n < level - 1:
+                filtered *= current_alpha
             else:
-                filtered *= 0
+                filtered = 0
+        
+            # reshape back
+            filtered_level[:, :, :, c] = filtered.reshape(T, H, W)
 
-        filtered_video.append(filtered)
-        lambda_c /= 2  
+            # attenuation for chrominance (SCALE_I, SCALE_Y)
+            # if c > 0:
+            #     filtered_level[:, :, :, c] *= attenuation
 
-    return filtered_video
+        filtered_video.append(filtered_level)
+        lambda_level /= 2  # spatial wavelength halves each level
+
+    return filtered_video'''
+
+
+    
+
+
+
+
+
+
+
 
 
 
@@ -202,36 +254,30 @@ def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
     print("laplacian pyramid complete")
 
     filtered_video = apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,
-                                       freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL, cutoff=CUTOFF, alpha=SCALE_FACTOR)
+                                       freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL, lambda_cutoff=LAMBDA_CUTOFF, alpha=ALPHA)
     
     print("butterworth filter complete")
 
-    result = reconstruct_video(filtered_video, level=LEVEL)
+    #result = reconstruct_video(filtered_video, level=LEVEL)
 
-    print("reconstruction complete")
+    #print("reconstruction complete")
 
     """
     I FEEL LIKE U SHUD DO THIS ALL IN ONE!!!!
     u do too much one at a time, reconstruct and amplify and add all in one function
     
     """
-    # chromatic attenuation
-    result[:][:][:][1] *= ALPHA_I 
-    result[:][:][:][2] *= ALPHA_Q
+ 
     
 
-    # add to original
-    result += yiq_frames
 
-    # convert to rgb
-    rgb_video = [inv_colorspace(frame) for frame in result]
 
     # cutoff wrong values
     #rgb_video[rgb_video < 0] = 0
     #rgb_video[rgb_video > 255] = 255
 
 
-    return rgb_video
+    return 
     
     
 
@@ -418,7 +464,7 @@ def main():
     magnified_rgb_frames = mag_colors(rgb_frames, fps, vidWidth, vidHeight)
     
     # convert magnified frames (which are in RGB) back to BGR for display.
-    magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
+    '''magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
     
     # extract ROI signal
     if final_roi_coords is None:
@@ -450,7 +496,7 @@ def main():
     plt.title("Comparison: Raw vs. Color-Magnified ROI Signals")
     plt.legend()
     plt.tight_layout()
-    plt.show()
+    plt.show()'''
 
 
     
