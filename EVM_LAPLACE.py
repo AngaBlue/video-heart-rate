@@ -29,10 +29,8 @@ green_signal_forehead = deque(maxlen=500)  # we don't need old frames
 green_signal_cheek = deque(maxlen=500)
 last_result = None
 
-# EVM parameters
-AMPLIFY_Y = 1  # luminance   
-AMPLIFY_I = 40 # R and G 
-AMPLIFY_Q = 40 # B and R 
+# EVM parameters  
+AMPLIFY_IQ = 1 # R and G 
 LAMBDA_CUTOFF = 1000 # spatial cutoff
 LEVEL = 4             # number of downscaling steps in the Gaussian pyramid (use 3-5)
 FREQ_LOW = 0.8  # 42 BPM
@@ -82,6 +80,7 @@ inv_colorspace = lambda x: cv2.normalize(yiq2rgb(x), None, 0, 255, cv2.NORM_MINM
 def laplacian_video(video_stack, level):
     """
     Create Laplacian pyramid for a video stack per level: [num_frames][H, W, C].
+    level 1 --> level 4
     """
 
     num_frames = len(video_stack)
@@ -89,11 +88,12 @@ def laplacian_video(video_stack, level):
     # compute the shapes of each level using the first frame
     g_pyramid = [video_stack[0].copy()]
     for _ in range(1, level):
+        # keep downsampling/blur most recently added frame
         g_pyramid.append(cv2.pyrDown(g_pyramid[-1]))
 
     level_shapes = [(img.shape[0], img.shape[1], img.shape[2]) for img in g_pyramid]
 
-    # allocate NumPy arrays for each level
+    # allocate NumPy arrays for each leve 
     laplace_video = [np.empty((num_frames, h, w, c), dtype=np.float32) for (h, w, c) in level_shapes]
 
     for i, frame in enumerate(video_stack):
@@ -145,85 +145,51 @@ to be able to control the frequency band corresponding to their application.
 """
 
 
-def apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight, freq_lo, freq_hi, level, lambda_cutoff, alpha):
+def apply_butterworth(laplace_video_pyramid, fps, freq_lo, freq_hi, level, lambda_cutoff, alpha):
     """
-    Apply temporal Butterworth bandpass filter across time for each pyramid level.
-    Amplify motion based on spatial wavelength and level-specific alpha.
-
-    Parameters:
-        laplace_video_pyramid: list of NumPy arrays, one per pyramid level, shape [T, H, W, C]
-        fps: frame rate
-        vidWidth, vidHeight: resolution of the original video
-        freq_lo, freq_hi: temporal bandpass range
-        level: number of pyramid levels
-        lambda_cutoff: spatial wavelength threshold
-        alpha: amplification factor
-    Returns:
-        filtered_video: list of same shape as input, but temporally filtered and amplified
+    Apply Butterworth bandpass filter for each pyramid level.
+    Amplify motion based on spatial wavelength and level-specific alpha
     """
+    
 
-    filtered_video = []
+    filtered_video = [0]*level
 
-    lambda_level = (vidWidth ** 2 + vidHeight ** 2) ** 0.5
+    # lambda_cuttoff limits spatial amplification based on the spatial frequency of the image at each level
+    # displacement function: subtle motion / temporal variation
     delta = (lambda_cutoff / 8) / (1 + alpha)
-    """ SHAPE
-    301 592 528 3
-    301 296 264 3
-    301 148 132 3
-    301 74 66 3
-    
-    """
-    for n in range(level):
-        current_level = laplace_video_pyramid[n]  # shape: [T, H, W, C]
+
+
+    for n in range(1, level-1):
+
+        current_level = laplace_video_pyramid[n]  
         T, H, W, C = current_level.shape
-
-        print(T, H, W, C)
-    return
-
-    
-    
-    '''for n in range(level):
-        current_level = laplace_video_pyramid[n]  # shape: [T, H, W, C]
-        T, H, W, C = current_level.shape
-
-        current_alpha = (lambda_level / (8 * delta)) - 1
-        current_alpha = min(alpha, current_alpha)
-
-        # bandpass filter each channel independently
-        filtered_level = np.zeros_like(current_level)
-
-        for c in range(C):
-            signal = current_level[:, :, :, c]  # shape [T, H, W]
-            signal_reshaped = signal.reshape(T, -1)  # reshape to [T, H*W] for filtering
-
-            filtered = bandpass_butterworth(signal_reshaped, fps, freq_lo, freq_hi)
-            if 0 < n < level - 1:
-                filtered *= current_alpha
-            else:
-                filtered = 0
         
-            # reshape back
-            filtered_level[:, :, :, c] = filtered.reshape(T, H, W)
+        lambda_level = (H ** 2 + W ** 2) ** 0.5
+        new_alpha = (lambda_level / (8 * delta)) - 1
+        amplification = min(alpha, new_alpha)
 
-            # attenuation for chrominance (SCALE_I, SCALE_Y)
-            # if c > 0:
-            #     filtered_level[:, :, :, c] *= attenuation
+        # reshape to [T, N] where N = H * W * C
+        filtered_flat = bandpass_butterworth(current_level.reshape(-1), fps, freq_lo, freq_hi, order=1)
 
-        filtered_video.append(filtered_level)
-        lambda_level /= 2  # spatial wavelength halves each level
+        # reshape to original size 
+        filtered_level = filtered_flat.reshape(T, H, W, C)
 
-    return filtered_video'''
+        # amplification factor = 100
+        filtered_level *= amplification
 
+        # chrominance attentuation = 1
+        filtered_level[:, :, :, 1:] *= AMPLIFY_IQ
 
-    
-
-
-
-
-
+        filtered_video[n] = filtered_level
 
 
+    # zero first and last pyramid levels as per MIT instructions
+    filtered_video[0] = np.array([0])*T
+    filtered_video[level - 1] = np.array([0])*T
 
+    return filtered_video
+
+  
 
 
 
@@ -231,14 +197,18 @@ def reconstruct_video(filtered_video, level):
     """
     Reconstructs a video from its filtered Laplacian pyramid of shape [num_frames, H, W, C]
     """
+    #frame_idx in range(len(filtered_video)):
+    for n in range(level):
+        return
 
-    pass
+       
+          
 
 
 
 
 
-def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
+def mag_colors(rgb_frames, fps):
     """
     perform EVM for color-based amplification
     """
@@ -253,8 +223,13 @@ def mag_colors(rgb_frames, fps, vidWidth, vidHeight):
 
     print("laplacian pyramid complete")
 
-    filtered_video = apply_butterworth(laplace_video_pyramid, fps, vidWidth, vidHeight,
+    filtered_video = apply_butterworth(laplace_video_pyramid, fps,
                                        freq_lo=FREQ_LOW, freq_hi=FREQ_HIGH, level=LEVEL, lambda_cutoff=LAMBDA_CUTOFF, alpha=ALPHA)
+    
+    for v in filtered_video:
+        cv2.imshow(v)
+        print(v)
+
     
     print("butterworth filter complete")
 
@@ -430,8 +405,6 @@ def main():
     
     # process video
     fps = cap.get(cv2.CAP_PROP_FPS)
-    vidWidth = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    vidHeight = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     landmarker = setup_face_landmarker(model_path)
 
@@ -461,7 +434,7 @@ def main():
     rgb_frames = [cv2.cvtColor(frame, cv2.COLOR_BGR2RGB) for frame in video_frames]
     
     # apply EVM (color magnification) to the entire sequence.
-    magnified_rgb_frames = mag_colors(rgb_frames, fps, vidWidth, vidHeight)
+    magnified_rgb_frames = mag_colors(rgb_frames, fps)
     
     # convert magnified frames (which are in RGB) back to BGR for display.
     '''magnified_bgr_frames = [cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) for frame in magnified_rgb_frames]
