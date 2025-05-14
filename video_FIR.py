@@ -33,26 +33,21 @@ ALPHA = 50.0
 # gaussian pyramid level of which to apply magnification, amplify signal, not noise, level 4 = 1/16 resolution
 LEVEL = 4 
 # temporal frequency filter params 
-FREQ_LOW = 0.4*60 
-FREQ_HIGH = 4*60 
+FREQ_LOW = 0.75 # 45 bpm
+FREQ_HIGH = 1.66 # 198 bpm
 # video frame scale factor
 SCALE_FACTOR = 1.0
 
 
-# asynchronous callback
-def get_result(result: FaceLandmarkerResult, output_image: mp.Image, timestamp_ms: int): #type: ignore
-    global last_result
-    last_result = result
 
 
 # MediaPipe model setup 
-def setup_face_landmarker(model_path, running_mode, callback=None):
+def setup_face_landmarker(model_path, running_mode):
     base = BaseOptions(model_asset_path=model_path)
     options = FaceLandmarkerOptions(
         base_options=base,
         running_mode=running_mode,
-        num_faces=1,
-        result_callback=callback if callback else None
+        num_faces=1
     )
     return FaceLandmarker.create_from_options(options)
 
@@ -114,7 +109,7 @@ def bgr2yiq(frame_bgr):
 
 
 # TODO!  fix params
-def fir_bandpass_filter(signal, fs, low, high, running_mode):
+'''def fir_bandpass_filter(signal, fs, low, high, running_mode):
 
     """
     - signal: Input signal (1D array-like)
@@ -131,37 +126,58 @@ def fir_bandpass_filter(signal, fs, low, high, running_mode):
     if running_mode == VisionRunningMode.VIDEO:
         taps = sp.firwin(numtaps=110, cutoff=[low, high], fs=fs, pass_zero=False)
         return sp.filtfilt(taps, [1.0], signal)
-    
     # real - time processing, less accurate
     else:
         taps = sp.firwin(numtaps=50, cutoff=[low, high], fs=fs, pass_zero=False)
-        return sp.lfilter(taps, [1.0], signal)
+        return sp.lfilter(taps, [1.0], signal)'''
     
 
-# do the fft to get da peak
-def calculate_bpm(signal, fps):
+
+def estimate_bpm(filtered_signal, fps):
+    # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
+    fft_vals = np.fft.fft(filtered_signal)
+    # get frequency values in hz
+    freqs = np.fft.fftfreq(len(filtered_signal), d=1/fps)
+
+    # only keep positive frequencies
+    pos_mask = freqs > 0
+    freqs = freqs[pos_mask]
+    fft_vals = np.abs(fft_vals[pos_mask])
+
+    # limit to heart rate range 
+    mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
+    # if no frequencies found within heart rate range
+    if not np.any(mask):
+        return None
+
+    freqs_in_band = freqs[mask]
+    magnitudes = fft_vals[mask]
+
+    # Get frequency with max power
+    dominant_freq = freqs_in_band[np.argmax(magnitudes)]
+
+    # Convert Hz to BPM
+    bpm = dominant_freq * 60.0
+    return bpm
+
+
+
+def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     """
-    Basic BPM estiamation, not sure if this is actually right for our evm heart rate system
+    Apply Butterworth bandpass filter using second-order sections (SOS).
+    Input signal shape: [T,] or [T, N]
     """
-
-    # convert to NumPy array and remove 0 Hz component 
-    sig = np.asarray(signal, dtype=float) 
-    sig -= np.mean(sig) # so peak detection isn’t biased by a wandering baseline
-
-    # only count strong prominent peaks
-    prominence = np.std(sig) * 0.5 # TODO: tweak this
-
-    # detect local maxima at least 0.4 s apart  
-    min_distance = int(0.4 * fps)
-    peaks, _ = sp.find_peaks(sig, distance=min_distance, prominence=prominence)
-
-    # time (in seconds) between successive peaks
-    intervals = np.diff(peaks) / fps
-
-    return 60.0 / intervals.mean()
+    nyquist = 0.5 * fps
+    low = freq_lo / nyquist
+    high = freq_high / nyquist
+    
+    sos = sp.butter(order, [low, high], btype='band', output='sos')
+    filtered = sp.sosfiltfilt(sos, signal, axis=0)
+    
+    return filtered
 
 
-#def evm(frame_bgr):
+
 
 def main():
 
@@ -169,6 +185,7 @@ def main():
 
     # important variables
     global last_result # last detected frame
+    video_frames = []  # will store raw frames (BGR)
     paused = False # boolean flag for pause functionality
     last_frame = None # copy of last detected frame
 
@@ -203,15 +220,16 @@ def main():
     running_mode = VisionRunningMode.VIDEO
     use_callback = False
 
-    landmarker = setup_face_landmarker(model_path, running_mode, get_result if use_callback else None)
+    landmarker = setup_face_landmarker(model_path, running_mode)
 
     with landmarker:
         while True:
             if not paused:    
                 ret, frame_bgr = cam.read()
-                fps = cam.get(cv.CAP_PROP_FPS)
                 # video sampling rate
-                #fs = cam.get(cv.CAP_PROP_FPS) # some webcams may give incorrect fps
+                fps = cam.get(cv.CAP_PROP_FPS)
+                last_frame = frame_bgr.copy()
+                video_frames.append(last_frame)
 
                 # if we hit the end of our video footage (last frame)
                 if not ret:
@@ -225,9 +243,6 @@ def main():
                         if key == ord('q'):
                             break
                     break
-
-                # saving current frame so it can be displayed if we hit pause
-                last_frame = frame_bgr.copy()
 
                 frame_rgb = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
@@ -243,9 +258,20 @@ def main():
                 
                 # update dynamic plot
                 update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
+                bpm_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, ha='right', va='top')
 
-                print(calculate_bpm(green_signal_cheek, fps))
-                #print(calculate_bpm(green_signal_forehead, fps))
+                # apply bandpass filter to cheek signal, using 2nd order butterworth
+                if len(green_signal_cheek) > 100:  # ensure enough signal length
+                    cheek_signal = np.array(green_signal_cheek, dtype=np.float32)
+                    filtered = bandpass_butterworth(cheek_signal, fps, FREQ_LOW, FREQ_HIGH, order=2)
+
+                    bpm = estimate_bpm(filtered, fps)
+                    if bpm is not None:
+                        print(f"Estimated BPM: {bpm:.2f}")
+                        bpm_text.set_text("")
+                        bpm_text.set_text(f"BPM: {bpm:.1f}")
+
+  
 
             else:
                 frame_bgr = last_frame

@@ -22,4 +22,8 @@ https://github.com/itberrios/CV_projects/tree/main/color_mag - python implementa
 https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - overall structure 
 
 
+ahila - 70/71bpm
+ky- 60bpm
+
+
 

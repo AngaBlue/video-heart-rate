@@ -117,16 +117,22 @@ def laplacian_video(video_stack, level):
 
 
     
-def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=1):
-    '''
-    Calculate the Butterworth bandpass filter, input = [T, N]
-    '''
+
+# apparently 2nd order (sosfiltfilt is better than filtfilt / lfilter) ?
+def bandpass_butterworth(signal, fps, freq_lo, freq_high, order=2):
+    """
+    Apply Butterworth bandpass filter using second-order sections (SOS).
+    Input signal shape: [T, N]
+    """
     nyquist = 0.5 * fps
     low = freq_lo / nyquist
     high = freq_high / nyquist
-    b, a = sp.butter(order, [low, high], btype='band')
-    filtered = sp.filtfilt(b, a, signal, axis=0) # eliminate delay/lag by filtering fwd and bwd
+    
+    sos = sp.butter(order, [low, high], btype='band', output='sos')
+    filtered = sp.sosfiltfilt(sos, signal, axis=0)
+    
     return filtered
+
 
 
 """
@@ -148,14 +154,13 @@ to be able to control the frequency band corresponding to their application.
 def apply_butterworth(laplace_video_pyramid, fps, freq_lo, freq_hi, level, lambda_cutoff, alpha):
     """
     Apply Butterworth bandpass filter for each pyramid level.
-    Amplify motion based on spatial wavelength and level-specific alpha
+    Amplify motion based on spatial wavelength (lambda) and level-specific alpha
     """
-    
 
-    filtered_video = [0]*level
+    filtered_video = [None]*level
 
     # lambda_cuttoff limits spatial amplification based on the spatial frequency of the image at each level
-    # displacement function: subtle motion / temporal variation
+    # displacement function: subtle motion / temporal variation, this is what we will amplify
     delta = (lambda_cutoff / 8) / (1 + alpha)
 
 
@@ -174,7 +179,7 @@ def apply_butterworth(laplace_video_pyramid, fps, freq_lo, freq_hi, level, lambd
             amplification = min(alpha, new_alpha)
 
             # reshape to [T, N] where N = H * W * C
-            filtered_flat = bandpass_butterworth(current_level.reshape(-1), fps, freq_lo, freq_hi, order=1)
+            filtered_flat = bandpass_butterworth(current_level.reshape(-1), fps, freq_lo, freq_hi, order=2)
 
             # reshape to original size 
             filtered_level = filtered_flat.reshape(T, H, W, C)
@@ -191,7 +196,31 @@ def apply_butterworth(laplace_video_pyramid, fps, freq_lo, freq_hi, level, lambd
     return filtered_video
 
   
+'''
+Input: 
+    filtered_video: list of [T x H x W x C] arrays, one per pyramid level
+    level: number of pyramid levels (e.g. 4)
 
+Output:
+    reconstructed_video: array of shape [T, H, W, C] — same size as original video
+
+Steps:
+1. Set current_level = filtered_video[level - 1]  # start from coarsest level
+
+2. For n from (level - 2) down to 0:
+    a. Upsample current_level to the shape of filtered_video[n]
+       - Use cv2.pyrUp with dstsize matching filtered_video[n]
+    
+    b. Add the upsampled result to filtered_video[n]
+       - This combines high-frequency detail back in
+    
+    c. Set current_level = this combined result
+
+3. Set reconstructed_video = current_level
+
+4. Return reconstructed_video
+
+'''
 
 
 def reconstruct_video(filtered_video, level):

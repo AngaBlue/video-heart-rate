@@ -138,12 +138,15 @@ def bandpass_fir(num_frames, fps, freq_lo, freq_hi):
     Creates a bandpass filter in the frequency domain using a FIR filter.
     """
 
+    filter_duration = 2
+
     # time-domain FIR filter, assumes centered and symmetric
     fir_kernel = sp.firwin(
-        numtaps=num_frames,               
+        numtaps=fps*filter_duration,               
         cutoff=(freq_lo, freq_hi),        # passband frequency range (in Hz)
         fs=fps,                           # sampling frequency
-        pass_zero=False                   # bandpass filter
+        pass_zero=False,                   # bandpass filter
+        window = "hamming"
     )
 
     # shift zero-frequency (center of impulse) to beginning: center aligned to t=0 for FFT 
