@@ -85,15 +85,15 @@ def laplacian_video(video_stack, level):
 
     num_frames = len(video_stack)
 
-    # compute the shapes of each level using the first frame
-    g_pyramid = [video_stack[0].copy()]
+    # Estimate the shape of each pyramid level using the first frame (for memory allocation)
+    shape_current = video_stack[0].copy()
+    shape_pyramid = [shape_current]
     for _ in range(1, level):
-        # keep downsampling/blur most recently added frame
-        g_pyramid.append(cv2.pyrDown(g_pyramid[-1]))
+        shape_pyramid.append(cv2.pyrDown(shape_pyramid[-1]))
 
-    level_shapes = [(img.shape[0], img.shape[1], img.shape[2]) for img in g_pyramid]
+    level_shapes = [(img.shape[0], img.shape[1], img.shape[2]) for img in shape_pyramid]
 
-    # allocate NumPy arrays for each leve 
+    # Allocate NumPy arrays for each level of the Laplacian pyramid
     laplace_video = [np.empty((num_frames, h, w, c), dtype=np.float32) for (h, w, c) in level_shapes]
 
     for i, frame in enumerate(video_stack):
@@ -109,9 +109,10 @@ def laplacian_video(video_stack, level):
             laplacian = g_pyramid[n] - upsampled
             laplace_video[n][i] = laplacian
 
-        laplace_video[-1][i] = g_pyramid[-1]  # add coarsest level for reconstruction
+        laplace_video[-1][i] = g_pyramid[-1]  # store coarsest level
 
     return laplace_video
+
 
 
 

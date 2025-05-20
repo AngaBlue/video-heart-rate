@@ -12,6 +12,11 @@ import colorsys
 # signal storage
 green_signal_forehead = deque(maxlen=500) # we dont need old frames
 green_signal_cheek = deque(maxlen=500)
+
+# testing other color signals
+red_signal_cheek = deque(maxlen=500) 
+blue_signal_cheek = deque(maxlen=500)
+
 last_result = None
 
 # after evm
@@ -61,15 +66,27 @@ def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bott
     return roi_x1, roi_y1, roi_x2, roi_y2
 
 
-def get_avg_green(roi):
-    return np.mean(roi[:, :, 1]) # height, width, color
+
+def get_avg(roi, color):
+    """
+    red = 0
+    green = 1
+    blue = 2
+    """
+    return np.mean(roi[:, :, color]) # height, width, color
 
 
-def update_plot(g_forehead, g_cheek, line1, line2, ax):
-    line1.set_ydata(g_forehead)
-    line1.set_xdata(range(len(g_forehead)))
-    line2.set_ydata(g_cheek)
-    line2.set_xdata(range(len(g_cheek)))
+
+def update_plot(signals, plot, ax):
+
+    if len(signals) != len(plot):
+        print("incorrect dimensions")
+        return
+                    
+    for i in range(len(signals)):
+        plot[i].set_ydata(signals[i])
+        plot[i].set_xdata(range(len(signals[i])))
+
     # recompute axis limits and update view
     ax.relim()
     ax.autoscale_view()
@@ -93,11 +110,15 @@ def process_frame(frame_bgr, landmarks):
     roi_forehead = frame_bgr[f_y1:f_y2, f_x1:f_x2]
     roi_cheek = frame_bgr[c_y1:c_y2, c_x1:c_x2]
 
-    avg_green_forehead = get_avg_green(roi_forehead)
-    avg_green_cheek = get_avg_green(roi_cheek)
+    # get average signal of green channel
+    green_signal_forehead.append(get_avg(roi_forehead, 1))  # height, width, color
+    green_signal_cheek.append(get_avg(roi_cheek, 1))
 
-    green_signal_forehead.append(avg_green_forehead)
-    green_signal_cheek.append(avg_green_cheek)
+    # testing, compare with red and blue signals
+    red_signal_cheek.append(get_avg(roi_cheek, 0))
+    blue_signal_cheek.append(get_avg(roi_cheek, 2))
+
+
     
 
 # coverts a BGR image to float32 YIQ
@@ -108,36 +129,13 @@ def bgr2yiq(frame_bgr):
     return yig
 
 
-# TODO!  fix params
-'''def fir_bandpass_filter(signal, fs, low, high, running_mode):
-
-    """
-    - signal: Input signal (1D array-like)
-    - fs: Sampling rate (frames per second)
-    - low: Low cutoff frequency (Hz)
-    - high: High cutoff frequency (Hz)
-    - numtaps: higher num = better freq resolution but slower ( must be < len(available frames ))
-    if len(green_signal_forehead) >= numtaps:
-        filtered = fir_bandpass_filter(green_signal_forehead, fs, low, high, numtaps)
-
-    - running_mode: LIVE_STREAM / VIDEO (if True, use filtfilt for zero-phase filtering. else, use lfilter. )
-    """
-    # more accurate for real time processing
-    if running_mode == VisionRunningMode.VIDEO:
-        taps = sp.firwin(numtaps=110, cutoff=[low, high], fs=fs, pass_zero=False)
-        return sp.filtfilt(taps, [1.0], signal)
-    # real - time processing, less accurate
-    else:
-        taps = sp.firwin(numtaps=50, cutoff=[low, high], fs=fs, pass_zero=False)
-        return sp.lfilter(taps, [1.0], signal)'''
-    
-
 
 def estimate_bpm(filtered_signal, fps):
     # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
     fft_vals = np.fft.fft(filtered_signal)
     # get frequency values in hz
     freqs = np.fft.fftfreq(len(filtered_signal), d=1/fps)
+
 
     # only keep positive frequencies
     pos_mask = freqs > 0
@@ -153,10 +151,10 @@ def estimate_bpm(filtered_signal, fps):
     freqs_in_band = freqs[mask]
     magnitudes = fft_vals[mask]
 
-    # Get frequency with max power
+    # get frequency with max power (largest magnitude)
     dominant_freq = freqs_in_band[np.argmax(magnitudes)]
 
-    # Convert Hz to BPM
+    # convert Hz to BPM
     bpm = dominant_freq * 60.0
     return bpm
 
@@ -164,8 +162,10 @@ def estimate_bpm(filtered_signal, fps):
 
 def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     """
-    Apply Butterworth bandpass filter using second-order sections (SOS).
+    Apply Butterworth bandpass filter.
     Input signal shape: [T,] or [T, N]
+
+    more stable bc breaks down a high-order filter into cascaded second-order sections (SOS),
     """
     nyquist = 0.5 * fps
     low = freq_lo / nyquist
@@ -175,7 +175,6 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     filtered = sp.sosfiltfilt(sos, signal, axis=0)
     
     return filtered
-
 
 
 
@@ -192,11 +191,19 @@ def main():
     # setup interactive plot
     plt.ion()
     _, ax = plt.subplots()
-    line1, = ax.plot([], [], label="forehead")
-    line2, = ax.plot([], [], label="cheek")
-    ax.set_title("green channel signal")
+    #line_gf, = ax.plot([], [], label="forehead green", color="dark green")
+    line_gc, = ax.plot([], [], label="cheek green", color="green")
+    line_r, = ax.plot([], [], label="cheek red", color="red")
+    line_b, = ax.plot([], [], label="cheek blue", color="blue")
+
+    ax.set_title("Heart Rate bpm")
     ax.set_xlabel("frame")
-    ax.set_ylabel("filtered green value")
+    ax.set_ylabel("signal value")
+
+    bpm_green_text = ax.text(0.95, 0.90, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_red_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_blue_text = ax.text(0.95, 0.80, '', transform=ax.transAxes, ha='right', va='top')
+
     ax.legend()
 
     # get model path
@@ -226,10 +233,6 @@ def main():
         while True:
             if not paused:    
                 ret, frame_bgr = cam.read()
-                # video sampling rate
-                fps = cam.get(cv.CAP_PROP_FPS)
-                last_frame = frame_bgr.copy()
-                video_frames.append(last_frame)
 
                 # if we hit the end of our video footage (last frame)
                 if not ret:
@@ -244,6 +247,11 @@ def main():
                             break
                     break
 
+                # video sampling rate
+                fps = cam.get(cv.CAP_PROP_FPS)
+                last_frame = frame_bgr.copy()
+                video_frames.append(last_frame)
+
                 frame_rgb = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
@@ -257,19 +265,42 @@ def main():
                     process_frame(frame_bgr, last_result.face_landmarks[0])
                 
                 # update dynamic plot
-                update_plot(green_signal_forehead, green_signal_cheek, line1, line2, ax)
-                bpm_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, ha='right', va='top')
+    
+                #update_plot(green_signal_forehead, green_signal_cheek, line_gf, line_gc, ax)
+                # update_plot(g_forehead, g_cheek, r_cheek, b_cheek, line1, line2, line3, line4, ax)
+
+                signals = [ green_signal_cheek, red_signal_cheek, blue_signal_cheek]
+                plot = [line_gc, line_r, line_b]
+
+                update_plot(signals, plot, ax)
+                
+
 
                 # apply bandpass filter to cheek signal, using 2nd order butterworth
-                if len(green_signal_cheek) > 100:  # ensure enough signal length
-                    cheek_signal = np.array(green_signal_cheek, dtype=np.float32)
-                    filtered = bandpass_butterworth(cheek_signal, fps, FREQ_LOW, FREQ_HIGH, order=2)
 
-                    bpm = estimate_bpm(filtered, fps)
-                    if bpm is not None:
-                        print(f"Estimated BPM: {bpm:.2f}")
-                        bpm_text.set_text("")
-                        bpm_text.set_text(f"BPM: {bpm:.1f}")
+                if len(green_signal_cheek) > 100:  # ensure enough signal length
+                 
+                    filtered_green = bandpass_butterworth(np.array(green_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+                    filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+                    filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+
+                    bpm_green = estimate_bpm(filtered_green, fps)
+                    bpm_red = estimate_bpm(filtered_red, fps)
+                    bpm_blue = estimate_bpm(filtered_blue, fps)
+
+                    
+                    if bpm_green is not None:
+                        print(f"Estimated BPM GREEN: {bpm_green:.2f}")
+                        print(f"Estimated BPM RED : {bpm_red:.2f}")
+                        print(f"Estimated BPM BLUE : {bpm_blue:.2f}")
+                        bpm_green_text.set_text("")
+                        bpm_green_text.set_text(f"BPM GREEN: {bpm_green:.1f}")
+
+                        bpm_red_text.set_text("")
+                        bpm_red_text.set_text(f"BPM RED: {bpm_red:.1f}")
+
+                        bpm_blue_text.set_text("")
+                        bpm_blue_text.set_text(f"BPM BLUE: {bpm_blue:.1f}")
 
   
 

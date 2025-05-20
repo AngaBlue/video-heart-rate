@@ -93,7 +93,7 @@ def gaussian_pyramid(image, level):
     colors = image.shape[2]
     pyramid = np.zeros((colors, rows, cols))
     
-    # apply gaussian downsampling "level" times
+    # apply gaussian downsampling "level" times, keep only most downsampled img
     for _ in range(level):
         image = cv2.pyrDown(image)
     # reshape into (channels, rows, cols), required for temporal filtering
@@ -133,20 +133,19 @@ def reconstruct_video(num_frames, yiq_frames, rgb_frames, magnified_pyramid):
     return magnified
 
 
+# TODO: FIX
+
 def bandpass_fir(num_frames, fps, freq_lo, freq_hi):
     """
     Creates a bandpass filter in the frequency domain using a FIR filter.
     """
 
-    filter_duration = 2
-
     # time-domain FIR filter, assumes centered and symmetric
     fir_kernel = sp.firwin(
-        numtaps=fps*filter_duration,               
+        numtaps=num_frames,               
         cutoff=(freq_lo, freq_hi),        # passband frequency range (in Hz)
         fs=fps,                           # sampling frequency
-        pass_zero=False,                   # bandpass filter
-        window = "hamming"
+        pass_zero=False                   # bandpass filter
     )
 
     # shift zero-frequency (center of impulse) to beginning: center aligned to t=0 for FFT 
@@ -328,10 +327,11 @@ def main():
     video_frames = []  # will store raw frames (BGR)
     
     # Get model path (assumes face_landmarker.task is in the same folder as this script)
-    script_dir = os.path.dirname(os.path.abspath(__file__))
+    '''script_dir = os.path.dirname(os.path.abspath(__file__))
     model_path = os.path.join(script_dir, "face_landmarker.task")
     
     # choose video input
+    
     choice = input("Select input: [1] light_skin or [2] dark_skin: ").strip()
     if choice == "1":
         video_file = "light_skin.mp4"
@@ -344,15 +344,34 @@ def main():
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print("Error opening video file.")
-        sys.exit(1)
+        sys.exit(1)'''
     
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    # get model path
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    video_dir = os.path.join(script_dir, 'video-footage')
+    model_path = os.path.join(script_dir, "face_landmarker.task")
+
+    # select input for VIDEO mode (video file) with user prompt
+    print("Select input video file:")
+    files = list(os.listdir(video_dir))
+    for i, path in enumerate(files):
+        print(f"[{i + 1}] {path}")
+    choice = int(input().strip()) - 1
+
+    if choice < 0 or choice >= len(files):
+        print("Invalid choice, exiting...")
+        exit(1)
+    
+    path = os.path.join(video_dir, files[choice])
+    cam = cv2.VideoCapture(path)
+    
+    fps = cam.get(cv2.CAP_PROP_FPS)
 
     landmarker = setup_face_landmarker(model_path)
 
     # process video file: capture frames and run face detection for ROI extraction.
     while True:
-        ret, frame = cap.read()
+        ret, frame = cam.read()
         if not ret:
             break
         video_frames.append(frame.copy())
@@ -360,13 +379,14 @@ def main():
         # for face detection, convert BGR to RGB.
         frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
-        timestamp = int(cap.get(cv2.CAP_PROP_POS_MSEC))
+        timestamp = int(cam.get(cv2.CAP_PROP_POS_MSEC))
         last_result = landmarker.detect_for_video(mp_image, timestamp)
 
         if last_result and last_result.face_landmarks:
             process_frame(frame, last_result.face_landmarks[0])
 
-    cap.release()
+
+    cam.release()
     
     if not video_frames:
         print("No video frames captured.")
@@ -385,7 +405,10 @@ def main():
     if final_roi_coords is None:
         print("ROI was not determined.")
         sys.exit(1)
+
+    # original   
     raw_signal = extract_roi_signal(video_frames, final_roi_coords)
+    # magnified
     evm_signal = extract_roi_signal(magnified_bgr_frames, final_roi_coords)
 
     # calculate heart rate bpm 
@@ -401,6 +424,7 @@ def main():
         if cv2.waitKey(30) & 0xFF == ord('q'): # q = quit
             break
     cv2.destroyAllWindows()
+    
     
     # plot the ROI signals 
     plt.figure(figsize=(10, 5))
