@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Generator, Tuple
 from utils.video_io import read_video, write_video
 
-TARGET_HEIGHTS = [480, 240, 120, 60]
+TARGET_HEIGHTS = [720, 480, 360, 240]
 
 
 def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
@@ -26,13 +26,13 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     aspect_ratio = orig_width / orig_height
 
     # Include original as control
-    control_out_path = output_root / "original.mp4"
+    control_out_path = output_root / f"{orig_width}x{orig_height}.mp4"
     if not control_out_path.exists():
         write_video(frames, str(control_out_path), fps)
-    yield str(control_out_path), "original"
+    yield str(control_out_path), f"{orig_width}x{orig_height}"
 
     # Generate degraded resolutions
-    for target_height in TARGET_HEIGHTS:
+    for target_height in filter(lambda x: x < orig_height, TARGET_HEIGHTS):
         target_width = int(round(target_height * aspect_ratio))
         label = f"{target_width}x{target_height}"
         out_path = output_root / f"{label}.mp4"

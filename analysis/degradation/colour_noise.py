@@ -5,7 +5,7 @@ from typing import Generator, Tuple
 from utils.video_io import read_video, write_video
 
 # Noise standard deviations to test (in pixel value units)
-NOISE_LEVELS = [5, 10, 20, 40]  # Reasonable range for visible degradation
+NOISE_LEVELS = [5, 10, 20, 40]
 
 
 def add_gaussian_noise(frame: np.ndarray, std_dev: float) -> np.ndarray:

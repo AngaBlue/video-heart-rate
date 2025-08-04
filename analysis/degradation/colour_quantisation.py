@@ -4,8 +4,8 @@ from pathlib import Path
 from typing import Generator, Tuple
 from utils.video_io import read_video, write_video
 
-# Levels of colour quantisation (number of bits per channel)
-COLOUR_DEPTHS = [6, 4, 2]  # 6-bit, 4-bit, 2-bit
+# Levels of colour quantisation (number of bits per channel), assuming 8 bit source
+COLOUR_DEPTHS = [7, 6, 5, 4]
 
 
 def quantise_colour(frame: np.ndarray, bits: int) -> np.ndarray:

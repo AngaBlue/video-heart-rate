@@ -22,12 +22,12 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     frames, fps = read_video(input_path)
 
     # Include original video as control
-    control_out_path = output_root / "original.mp4"
+    control_out_path = output_root / f"{fps}fps.mp4"
     if not control_out_path.exists():
         write_video(frames, str(control_out_path), fps)
-    yield str(control_out_path), "original"
+    yield str(control_out_path), f"{fps}fps"
 
-    for target_fps in TARGET_FPS:
+    for target_fps in filter(lambda x: x < fps, TARGET_FPS):
         label = f"{target_fps}fps"
         out_path = output_root / f"{label}.mp4"
 
