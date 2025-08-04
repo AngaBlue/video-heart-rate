@@ -10,10 +10,7 @@ TARGET_HEIGHTS = [720, 480, 360, 240]
 def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     """
     Applies spatial resolution degradation by scaling height and adjusting width
-    proportionally. Also includes the original as 'original' control.
-
-    Yields:
-        Tuple of (output_path, resolution_label) for each version.
+    proportionally.
     """
     base_name = Path(input_path).stem
     output_root = Path("results") / base_name / \
@@ -26,10 +23,11 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     aspect_ratio = orig_width / orig_height
 
     # Include original as control
-    control_out_path = output_root / f"{orig_width}x{orig_height}.mp4"
-    if not control_out_path.exists():
-        write_video(frames, str(control_out_path), fps)
-    yield str(control_out_path), f"{orig_width}x{orig_height}"
+    label = f"{orig_width}x{orig_height}"
+    out_path = output_root / f"{label}.mp4"
+    if not out_path.exists():
+        write_video(frames, str(out_path), fps)
+    yield str(out_path), f"{orig_width}x{orig_height}"
 
     # Generate degraded resolutions
     for target_height in filter(lambda x: x < orig_height, TARGET_HEIGHTS):

@@ -27,9 +27,6 @@ def add_gaussian_noise(frame: np.ndarray, std_dev: float) -> np.ndarray:
 def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     """
     Applies Gaussian colour noise to the video at multiple levels.
-
-    Yields:
-        Tuple of (output_path, label) for each degraded version.
     """
     base_name = Path(input_path).stem
     output_root = Path("results") / base_name / "degraded" / "colour_noise"
@@ -38,10 +35,10 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     frames, fps = read_video(input_path)
 
     # Include original as control
-    control_out_path = output_root / "original.mp4"
+    control_out_path = output_root / "0std.mp4"
     if not control_out_path.exists():
         write_video(frames, str(control_out_path), fps)
-    yield str(control_out_path), "original"
+    yield str(control_out_path), "0std"
 
     for std_dev in NOISE_LEVELS:
         label = f"{int(std_dev)}std"

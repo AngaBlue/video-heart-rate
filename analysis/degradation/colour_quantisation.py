@@ -4,8 +4,9 @@ from pathlib import Path
 from typing import Generator, Tuple
 from utils.video_io import read_video, write_video
 
-# Levels of colour quantisation (number of bits per channel), assuming 8 bit source
-COLOUR_DEPTHS = [7, 6, 5, 4]
+# Levels of colour quantisation (number of bits per channel)
+SOURCE_DEPTH = 8 # This value is assumed, not measured from the video (10 is also a very possible value)
+COLOUR_DEPTHS = [9, 8, 7, 6, 5, 4]
 
 
 def quantise_colour(frame: np.ndarray, bits: int) -> np.ndarray:
@@ -14,7 +15,7 @@ def quantise_colour(frame: np.ndarray, bits: int) -> np.ndarray:
 
     Args:
         frame: Input RGB image as a NumPy array.
-        bits: Target bits per channel (1-8).
+        bits: Target bits per channel.
 
     Returns:
         Quantised image.
@@ -27,9 +28,6 @@ def quantise_colour(frame: np.ndarray, bits: int) -> np.ndarray:
 def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     """
     Applies colour quantisation degradation at various bit levels.
-
-    Yields:
-        Tuple of (output_path, label) for each degraded version.
     """
     base_name = Path(input_path).stem
     output_root = Path("results") / base_name / \
@@ -39,12 +37,12 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     frames, fps = read_video(input_path)
 
     # Include original as control
-    control_out_path = output_root / "original.mp4"
+    control_out_path = output_root / f"{SOURCE_DEPTH}-bit.mp4"
     if not control_out_path.exists():
         write_video(frames, str(control_out_path), fps)
-    yield str(control_out_path), "original"
+    yield str(control_out_path), f"{SOURCE_DEPTH}-bit"
 
-    for bits in COLOUR_DEPTHS:
+    for bits in filter(lambda x: x < SOURCE_DEPTH, COLOUR_DEPTHS):
         label = f"{bits}-bit"
         out_path = output_root / f"{label}.mp4"
 
