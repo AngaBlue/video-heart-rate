@@ -29,7 +29,7 @@ python main.py --video sample1.mp4 \
 This will:
  - Apply multiple levels of spatial resolution degradation.
  - Measure average heart rate from each degraded video using selected methods.
- - Save results in `results/` and generate a comparison plot.
+ - Save results in `results/` and generate comparison metrics plots.
 
 ## 📁 Project Structure
 ```
@@ -38,12 +38,13 @@ video_hr_analysis/
 ├── videos/                     # Input videos
 ├── results/                    # Output videos, HR data, plots
 │
-├── degradation/                # Video degradation modules│
-├── measurement/                # Heart rate estimation techniques│
+├── degradation/                # Video degradation modules
+├── measurement/                # Heart rate estimation techniques
+├── metrics/                    # Metrics and plot generation
+|
 ├── utils/
 │   ├── video_io.py             # Read/write video
 │   ├── plotting.py             # Generate HR vs degradation plots
-│   └── metrics.py              # (optional) Metrics like MAE, RMSE
 ```
 
 ## 🧩 Adding a New Degradation Method
@@ -72,8 +73,21 @@ def measure(video_path: str) -> np.ndarray:
     return np.array([...])
 ```
 
+## 📈 Adding a New Metric
+Each metric must:
+ - Be placed in the `metrics/` folder.
+ - Export a function `plot(truth: Dict[str, Dict[str, np.ndarray]], results: truth: Dict[str, Dict[str, np.ndarray]], x_label: str = "Degradation Level": str) -> void` that returns nothing.
+
+For example, an average HR metric would be written as follows:
+```python
+def plot(truth: Dict[str, Dict[str, np.ndarray]], results: truth: Dict[str, Dict[str, np.ndarray]], x_label: str = "Degradation Level": str) -> void:
+    # plotting setup
+    for method, method_results in results.items():
+        plt.plot(list(method_results.keys()), np.avg(method_results.values()), marker='o', label=method)
+```
+
 ## 📈 Output
 The system saves:
  - Degraded videos: `results/<video>/degraded/<technique>/<label>.mp4`
  - HR signals: `results/<video>/hr_outputs/<method>/<technique>/<label>.npy`
- - Graphs: `results/<video>/graphs/avg_hr_vs_<technique>.png`
+ - Metrics: `results/<video>/metrics/<metric>.png`
