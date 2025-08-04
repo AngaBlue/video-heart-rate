@@ -3,7 +3,6 @@ import os
 import importlib
 from pathlib import Path
 import numpy as np
-from utils.video_io import get_video_files
 from utils.plotting import generate_hr_vs_degradation_plot
 
 VIDEOS_DIR = "videos"

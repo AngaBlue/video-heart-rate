@@ -53,15 +53,3 @@ def write_video(frames: List, output_path: str, fps: float) -> None:
 
     out.release()
 
-
-def get_video_files(directory: str) -> List[str]:
-    """
-    Lists video files in a given directory with specified extensions.
-
-    Returns:
-        List of filenames (not full paths)
-    """
-    return [
-        f for f in os.listdir(directory)
-        if f.lower().endswith('.mp4') and os.path.isfile(os.path.join(directory, f))
-    ]
