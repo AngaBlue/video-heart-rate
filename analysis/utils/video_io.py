@@ -45,7 +45,7 @@ def write_video(frames: List, output_path: str, fps: float) -> None:
 
     height, width = frames[0].shape[:2]
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # Use MP4 codec
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # pyright: ignore[reportAttributeAccessIssue] # Use MP4 codec
     out = cv2.VideoWriter(output_path, fourcc, fps, (width, height))
 
     for frame in frames:
