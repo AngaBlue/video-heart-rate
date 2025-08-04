@@ -4,7 +4,7 @@ import importlib
 from pathlib import Path
 import numpy as np
 from utils.video_io import get_video_files
-# from utils.plotting import generate_hr_vs_degradation_plot
+from utils.plotting import generate_hr_vs_degradation_plot
 
 VIDEOS_DIR = "videos"
 RESULTS_DIR = "results"
@@ -60,7 +60,7 @@ def main():
         print(f" -> Degraded version: {label}")
 
         for method in methods:
-            print(f"    -> Measuring HR using {method}")
+            print(f"    -> Measuring HR using {method} method")
             hr_signal = apply_measurement(degraded_path, method)
             avg_hr = np.mean(hr_signal)
 
@@ -72,14 +72,14 @@ def main():
             os.makedirs(out_dir, exist_ok=True)
             np.save(os.path.join(out_dir, f"{label}.npy"), hr_signal)
 
-    # # ✅ Plotting
-    # print("\n📈 Generating HR vs Degradation plot...")
-    # plot_dir = os.path.join(RESULTS_DIR, base_name, "graphs")
-    # os.makedirs(plot_dir, exist_ok=True)
-    # plot_path = os.path.join(plot_dir, f"avg_hr_vs_{degradation}.png")
+    # ✅ Plotting
+    print("\n📈 Generating HR vs Degradation plot...")
+    plot_dir = os.path.join(RESULTS_DIR, base_name, "graphs")
+    os.makedirs(plot_dir, exist_ok=True)
+    plot_path = os.path.join(plot_dir, f"avg_hr_vs_{degradation}.png")
 
-    # generate_hr_vs_degradation_plot(hr_results, plot_path, x_label=degradation)
-    # print(f"✅ Plot saved to {plot_path}")
+    generate_hr_vs_degradation_plot(hr_results, plot_path, x_label=degradation)
+    print(f"✅ Plot saved to {plot_path}")
 
 
 if __name__ == "__main__":
