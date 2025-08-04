@@ -1,5 +1,4 @@
 import os
-import cv2
 import numpy as np
 from pathlib import Path
 from typing import Generator, Tuple
@@ -7,6 +6,7 @@ from utils.video_io import read_video, write_video
 
 # Levels of colour quantisation (number of bits per channel)
 COLOUR_DEPTHS = [6, 4, 2]  # 6-bit, 4-bit, 2-bit
+
 
 def quantise_colour(frame: np.ndarray, bits: int) -> np.ndarray:
     """
@@ -32,7 +32,8 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
         Tuple of (output_path, label) for each degraded version.
     """
     base_name = Path(input_path).stem
-    output_root = Path("results") / base_name / "degraded" / "colour_quantisation"
+    output_root = Path("results") / base_name / \
+        "degraded" / "colour_quantisation"
     os.makedirs(output_root, exist_ok=True)
 
     frames, fps = read_video(input_path)
