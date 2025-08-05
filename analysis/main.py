@@ -1,9 +1,9 @@
 import argparse
 import os
 import importlib
+import importlib.util
 from pathlib import Path
 import numpy as np
-from utils.plotting import generate_hr_vs_degradation_plot
 
 VIDEOS_DIR = "videos"
 RESULTS_DIR = "results"
@@ -45,40 +45,56 @@ def main():
     if not os.path.exists(video_path):
         print(f"❌ Video '{video_file}' not found in '{VIDEOS_DIR}'")
         return
+    
+    truth_path = os.path.join(VIDEOS_DIR, f"{".".join(video_file.split(".")[:-1])}.csv")
+    if not os.path.exists(truth_path):
+        print(f"❌ Ground Truth Data '{truth_path}' not found in '{VIDEOS_DIR}'")
+        return
 
     base_name = Path(video_file).stem
     degradation_dir = os.path.join(
         RESULTS_DIR, base_name, "degraded", degradation)
     os.makedirs(degradation_dir, exist_ok=True)
 
-    # Store average HR for each method per degraded version
-    hr_results = {method: {} for method in methods}
+    # Store time series estimates for each method per degraded version
+    results = {method: {} for method in methods}
 
     print(f"\n🛠️ Applying degradation: {degradation}")
-    for degraded_path, label in apply_degradation(degradation, video_path):
-        print(f" -> Degraded version: {label}")
+    for degraded_path, degraded_label in apply_degradation(degradation, video_path):
+        print(f"  📽️ Created degraded version: {degraded_label}")
 
         for method in methods:
-            print(f"    -> Measuring HR using {method} method")
-            hr_signal = apply_measurement(degraded_path, method)
-            avg_hr = np.mean(hr_signal)
-
-            hr_results[method][label] = avg_hr
+            print(f"    📏 Measuring HR using {method} method")
+            measurement = apply_measurement(degraded_path, method)
+            results[method][degraded_label] = measurement
 
             # Save individual result
             out_dir = os.path.join(
-                RESULTS_DIR, base_name, "hr_outputs", method, degradation)
+                RESULTS_DIR, base_name, "measurements", method, degradation)
             os.makedirs(out_dir, exist_ok=True)
-            np.save(os.path.join(out_dir, f"{label}.npy"), hr_signal)
+            np.save(os.path.join(
+                out_dir, f"{degraded_label}.npy"), measurement)
+    print(f"✅ Saved results\n")
 
-    # ✅ Plotting
-    print("\n📈 Generating HR vs Degradation plot...")
-    plot_dir = os.path.join(RESULTS_DIR, base_name, "graphs")
-    os.makedirs(plot_dir, exist_ok=True)
-    plot_path = os.path.join(plot_dir, f"avg_hr_vs_{degradation}.png")
+    # Running metrics
+    metrics_path = Path("metrics")
+    for metric_file in metrics_path.glob("*.py"):
+        if metric_file.name.startswith("_"):
+            continue
 
-    generate_hr_vs_degradation_plot(hr_results, plot_path, x_label=degradation)
-    print(f"✅ Plot saved to {plot_path}")
+        spec = importlib.util.spec_from_file_location(
+            metric_file.stem, metric_file)
+        if not spec or not spec.loader:
+            continue
+
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        print(f"📊 Running metric: {metric_file.stem}")
+        module.plot(truth_results, results, x_label=degradation,
+                    output_dir=metrics_path)
+
+    print(f"\n✅ Saved plots to: {metrics_path}")
 
 
 if __name__ == "__main__":
