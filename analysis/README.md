@@ -6,15 +6,28 @@ A modular Python system for investigating heart rate estimation techniques on pr
 
 ## 🚀 Quick Start
 
-### 1. 📁 Place a Video
+### 1. 📁 Place a Video & Ground Truth Data
 
-Put your input video(s) in the `videos/` folder. For example:
+Put your input video and ground truth data in the `videos/` folder. For example:
 
 ```
 videos/sample1.mp4
+videos/sample1.csv
 ```
 
-_**Note**: videos added to this folder are git ignored, meaning they won't be committed to avoid filling the repository with large files._
+_**Note**: videos and ground truth data added to this folder are git ignored, meaning they won't be committed to avoid filling the repository with large files._
+
+The CSV ground truth data should adhere to the following format:
+
+```csv
+timestamp, heart_rate
+0, 72
+1, 73
+2, 71
+...
+```
+
+Missing timestamps will be automatically interpolated.
 
 ### 2. ▶️ Run the CLI
 
