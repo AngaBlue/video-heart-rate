@@ -58,7 +58,7 @@ def write_video(frames: List, output_path: str, fps: float) -> None:
 
 
 def read_truth_for_video(video_path: str, fps: float, num_frames: int) -> np.ndarray:
-    csv_path = Path(video_path).with_name(Path(video_path).stem + "_hr.csv")
+    csv_path = Path(video_path).with_name(Path(video_path).stem + ".csv")
     df = pd.read_csv(csv_path)
     if len(df) != num_frames:
         raise ValueError(

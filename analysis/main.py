@@ -46,10 +46,13 @@ def main():
         print(f"❌ Video '{video_file}' not found in '{VIDEOS_DIR}'")
         return
     
-    truth_path = os.path.join(VIDEOS_DIR, f"{".".join(video_file.split(".")[:-1])}.csv")
+    truth_file = f"{Path(video_file).stem}.csv"
+    truth_path = os.path.join(VIDEOS_DIR, truth_file)
     if not os.path.exists(truth_path):
         print(f"❌ Ground Truth Data '{truth_path}' not found in '{VIDEOS_DIR}'")
         return
+    
+    print(f"✅ Loaded video '{video_file}' and ground truth data '{truth_file}'")
 
     base_name = Path(video_file).stem
     degradation_dir = os.path.join(
