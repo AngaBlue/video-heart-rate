@@ -20,10 +20,10 @@ _**Note**: videos and ground truth data added to this folder are git ignored, me
 The CSV ground truth data should adhere to the following format:
 
 ```csv
-timestamp, heart_rate
-0, 72
-1, 73
-2, 71
+timestamp,heart_rate
+0,72
+1,73
+2,71
 ...
 ```
 
