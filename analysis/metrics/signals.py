@@ -39,12 +39,12 @@ def plot(
 
     ax.set_xlabel("Time (s)")
     ax.set_ylabel("BPM")
-    ax.set_title("BPM over Time (all methods & degradations)")
+    ax.set_title("BPM over Time")
     ax.grid(True, alpha=0.3)
     ax.legend(ncol=2)
     fig.tight_layout()
 
-    save_path = os.path.join(output_dir, "signals_all.png")
+    save_path = os.path.join(output_dir, f"signals_{x_label}.png")
     os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
     fig.savefig(save_path, dpi=150)
     plt.close(fig)
