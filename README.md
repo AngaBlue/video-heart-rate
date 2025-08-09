@@ -1,29 +1,26 @@
-# video-heart-rate
+# 📊 Video Heart Rate
 
 Remote photoplethysmography (rPPG) uses cameras to non-invasively monitor vital signals like heart rate, offering contactless monitoring with potential for remote healthcare applications.
 
+## 🛠️ Setup
+At the root of the project (`video-heart-rate`) run the following to set-up with Python virtual environments:
 
-SETUP (mac-os), YOU NEED  TO BE EXACTLY INSIDE /video-heart-rate to run this 
+```bash
+python3 -m venv .venv
+```
 
-1. source .venv/bin/activate (if u already have ur .venv)
-1. python3 -m venv .venv (if u need to create ur .venv)
+Then activate the virtual environmental and install dependencies with:
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+```
 
-2. pip install -r requirements.txt
+## 📝 Notes
+The pause functionality only works if the CV window is active.
 
+The following resources have been used to create this project:
 
-Notes:
-pause functionality only works if u press on CV window
-
-I am referencing the following papers / repositories:
-
-https://people.csail.mit.edu/mrub/evm/ - website
-https://people.csail.mit.edu/mrub/papers/vidmag.pdf - EVM, video footage
-https://github.com/itberrios/CV_projects/tree/main/color_mag - python implementation of EVM
-https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - overall structure 
-
-
-ahila - 70/71bpm
-ky- 60bpm
-
-
-
+ - https://people.csail.mit.edu/mrub/evm/ - Website
+ - https://people.csail.mit.edu/mrub/papers/vidmag.pdf - EVM, video footage
+ - https://github.com/itberrios/CV_projects/tree/main/color_mag - Python implementation of EVM
+ - https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - Overall structure 
