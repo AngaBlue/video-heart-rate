@@ -4,6 +4,7 @@ import importlib
 import importlib.util
 from pathlib import Path
 import numpy as np
+from utils.video_io import read_truth_for_video
 
 VIDEOS_DIR = "videos"
 RESULTS_DIR = "results"
@@ -45,14 +46,18 @@ def main():
     if not os.path.exists(video_path):
         print(f"❌ Video '{video_file}' not found in '{VIDEOS_DIR}'")
         return
-    
+
     truth_file = f"{Path(video_file).stem}.csv"
     truth_path = os.path.join(VIDEOS_DIR, truth_file)
     if not os.path.exists(truth_path):
-        print(f"❌ Ground Truth Data '{truth_path}' not found in '{VIDEOS_DIR}'")
+        print(
+            f"❌ Ground Truth Data '{truth_path}' not found in '{VIDEOS_DIR}'")
         return
-    
-    print(f"✅ Loaded video '{video_file}' and ground truth data '{truth_file}'")
+
+    print(f"✅ Found video '{video_file}' and ground truth data '{truth_file}'")
+
+    # Load ground truth
+    truth_results = read_truth_for_video(truth_path)
 
     base_name = Path(video_file).stem
     degradation_dir = os.path.join(
@@ -81,6 +86,7 @@ def main():
 
     # Running metrics
     metrics_path = Path("metrics")
+    plots_dir = os.path.join(RESULTS_DIR, base_name, "plots")
     for metric_file in metrics_path.glob("*.py"):
         if metric_file.name.startswith("_"):
             continue
@@ -95,9 +101,9 @@ def main():
 
         print(f"📊 Running metric: {metric_file.stem}")
         module.plot(truth_results, results, x_label=degradation,
-                    output_dir=metrics_path)
+                    output_dir=plots_dir)
 
-    print(f"\n✅ Saved plots to: {metrics_path}")
+    print(f"\n✅ Saved plots to: {plots_dir}")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ import os
 import pandas as pd
 import numpy as np
 
+
 def read_video(video_path: str) -> Tuple[List, float]:
     """
     Reads a video file and returns its frames and frame rate.
@@ -57,34 +58,50 @@ def write_video(frames: List, output_path: str, fps: float) -> None:
     out.release()
 
 
-def read_truth_for_video(video_path: str, fps: float, num_frames: int) -> np.ndarray:
-    csv_path = Path(video_path).with_name(Path(video_path).stem + ".csv")
-    df = pd.read_csv(csv_path)
-    if len(df) != num_frames:
+def read_truth_for_video(truth_path: str) -> pd.DataFrame:
+    df = pd.read_csv(truth_path)
+    if not {'timestamp', 'heart_rate'}.issubset(df.columns):
         raise ValueError(
-            "Mismatch between interpolated HR length and video frame count.")
-    return df['heart_rate'].values
+            "Ground truth data must have columns ['timestamp', 'heart_rate'].")
+
+    # Clean & sort truth
+    df = (
+        df[['timestamp', 'heart_rate']]
+        .dropna(subset=['timestamp', 'heart_rate'])
+        .drop_duplicates(subset=['timestamp'])
+        .sort_values('timestamp')
+    )
+    if df.empty:
+        raise ValueError(
+            "Ground truth data has no valid timestamp/heart_rate rows.")
+
+    return df
 
 
-def interpolate_hr_to_frames(hr_data: pd.DataFrame, num_frames: int, fps: float) -> pd.DataFrame:
+def interpolate_hr_to_frames(truth: pd.DataFrame, measured: np.ndarray) -> np.ndarray:
     """
-    hr_data: DataFrame with columns ['timestamp', 'heart_rate'] in seconds
-    num_frames: total number of frames in the video
-    fps: frames per second
-    Returns a new DataFrame with one row per frame.
+    Interpolate ground-truth heart rate to the timestamps of `measured`.
+
+    Args:
+        truth: DataFrame with columns ['timestamp', 'heart_rate'] in seconds.
+        measured: Either a 1D array of timestamps, or a 2D array whose first column
+                  contains timestamps. The return will be [timestamp, hr] with the same
+                  number of rows as `measured`.
+
+    Returns:
+        np.ndarray of shape (N, 2): [timestamp, interpolated_heart_rate]
     """
-    # Target frame timestamps
-    frame_times = np.arange(num_frames) / fps
+    t_truth = truth['timestamp'].to_numpy(dtype=float)
+    hr_truth = truth['heart_rate'].to_numpy(dtype=float)
 
-    # Interpolate heart rate
-    interpolated_hr = np.interp(
-        frame_times, hr_data['timestamp'], hr_data['heart_rate'])
+    measured = np.asarray(measured)
+    if measured.ndim != 2 or measured.shape[1] < 1:
+        raise ValueError("`measured` must be 2D with timestamps in column 0.")
+    t_meas = measured[:, 0].astype(float)
 
-    # Build new DataFrame
-    result = pd.DataFrame({
-        'frame_number': np.arange(num_frames),
-        'timestamp': frame_times,
-        'heart_rate': interpolated_hr
-    })
+    # For each t_meas, pick the last truth time <= t_meas; clamp before-first to index 0
+    idx = np.searchsorted(t_truth, t_meas, side='right') - 1
+    idx = np.clip(idx, 0, len(t_truth) - 1)
 
-    return result
+    assigned_hr = hr_truth[idx]
+    return np.column_stack([t_meas, assigned_hr])

@@ -1,22 +1,23 @@
 import numpy as np
-
+from utils.video_io import read_video
 
 def measure(video_path: str) -> np.ndarray:
     """
-    Dummy HR measurement: returns a synthetic sine wave with noise.
-
-    Args:
-        video_path: Path to the input video (ignored in dummy).
+    Dummy HR measurement: returns random heart rates aligned to video timestamps.
 
     Returns:
-        np.ndarray: Simulated heart rate signal over time.
+        np.ndarray of shape (N, 2): [timestamp (s), predicted_hr (BPM)]
     """
-    # Simulate 30 seconds of HR data sampled at 30 Hz (900 samples)
-    fs = 30
-    duration = 30
-    t = np.linspace(0, duration, duration * fs)
+    frames, fps = read_video(video_path)
+    n = len(frames)
+    if n == 0:
+        return np.empty((0, 2), dtype=float)
 
-    # Base heart rate ~1.2 Hz (~72 BPM), plus noise
-    hr_signal = 72 + 5 * np.sin(2 * np.pi * 1.2 * t) + \
-        np.random.normal(0, 1.5, t.shape)
-    return hr_signal
+    # Timestamps for each frame (seconds)
+    t = np.arange(n, dtype=float) / float(fps)
+
+    # Random-but-plausible HR around 72 BPM
+    hr = np.random.normal(loc=72.0, scale=3.0, size=n)
+
+    return np.column_stack([t, hr.astype(float)])
+

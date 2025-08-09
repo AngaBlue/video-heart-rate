@@ -89,18 +89,23 @@ def measure(video_path: str) -> np.ndarray:
 ## 📈 Adding a New Metric
 Each metric must:
  - Be placed in the `metrics/` folder.
- - Export a function `plot(truth: Dict[str, Dict[str, np.ndarray]], results: truth: Dict[str, Dict[str, np.ndarray]], x_label: str = "Degradation Level": str) -> void` that returns nothing.
+ - Export a function `plot(truth: Dict[str, Dict[str, np.ndarray]], results: truth: pd.DataFrame, x_label: str = "Degradation Level": str) -> void` that returns nothing.
 
 For example, an average HR metric would be written as follows:
 ```python
-def plot(truth: Dict[str, Dict[str, np.ndarray]], results: truth: Dict[str, Dict[str, np.ndarray]], x_label: str = "Degradation Level": str) -> void:
-    # plotting setup
-    for method, method_results in results.items():
-        plt.plot(list(method_results.keys()), np.avg(method_results.values()), marker='o', label=method)
+def plot(truth: Dict[str, Dict[str, np.ndarray]], results: pd.DataFrame, x_label: str = "Degradation Level": str) -> void:
+    # plotting setup...
+    for method, by_deg in results.items():
+        for degradation, measured in by_deg.items():
+            aligned_truth = interpolate_hr_to_frames(truth, measured)
+            truth_hr = aligned_truth[:, 1].astype(float)
+            pred_hr  = measured[:, 1].astype(float)
+            # metrics calculation...
+    # complete plotting...
 ```
 
 ## 📈 Output
 The system saves:
  - Degraded videos: `results/<video>/degraded/<technique>/<label>.mp4`
- - HR signals: `results/<video>/hr_outputs/<method>/<technique>/<label>.npy`
- - Metrics: `results/<video>/metrics/<metric>.png`
+ - Measured Heart Rates: `results/<video>/measured/<method>/<technique>/<label>.npy`
+ - Plots: `results/<video>/plots/<metric>.png`
