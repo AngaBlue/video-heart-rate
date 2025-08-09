@@ -1,0 +1,3 @@
+ - Validate green channel avg measurement method
+ - Fix frame timings of temporal_resolution degradation
+ - Move ROI selection to utils 
