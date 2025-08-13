@@ -1,4 +1,3 @@
-from __future__ import annotations
 from collections import deque
 from typing import Optional
 import numpy as np
@@ -10,11 +9,11 @@ from utils.video_io import read_video
 FREQ_LOW = 40 / 60
 FREQ_HIGH = 200 / 60
 FILTER_ORDER = 2
-WINDOW_SEC = 10.0
+WINDOW_SIZE = 10.0 # seconds
+ACQUISITION_TIME = 5.0 # seconds
 
 
-def _bandpass_butterworth(signal: np.ndarray, fs: float,
-                          freq_lo: float, freq_hi: float, order: int) -> np.ndarray:
+def _bandpass_butterworth(signal: np.ndarray, fs: float, freq_lo: float, freq_hi: float, order: int) -> np.ndarray:
     nyq = 0.5 * fs
     low = max(1e-6, freq_lo / nyq)
     high = min(0.999, freq_hi / nyq)
@@ -47,48 +46,39 @@ def measure(video_path: str) -> np.ndarray:
     Returns:
         np.ndarray of shape (N, 2):
             column 0: timestamp in seconds (per-frame, 0..(N-1)/fps)
-            column 1: estimated BPM (carry-forward after first valid estimate)
+            column 1: estimated BPM
     """
+    # Read video
     frames, fps = read_video(video_path)
-    n = len(frames)
-
-    timestamps = np.arange(n, dtype=float) / float(fps)
-    bpm_series = np.full(n, np.nan, dtype=float)
 
     # Rolling window for green signal
-    window_len = max(1, int(WINDOW_SEC * fps))
+    window_len = int(WINDOW_SIZE * fps)
+    acquisition_len = int(ACQUISITION_TIME * fps)
     green = deque(maxlen=window_len)
-    last_bpm: Optional[float] = None
+    
+    # Results
+    timestamps = []
+    bpm_series = []
 
-    for i, (roi, _ts_ms) in enumerate(get_roi(frames, fps)):
+    for i, roi in enumerate(get_roi(frames, fps)):
+        # Calculate green channel average
         green_val = float(np.mean(roi[:, :, 1]))
         green.append(green_val)
 
-        # Compute BPM when window is sufficiently filled
-        if len(green) >= max(64, int(3.0 * fps)):  # at least ~3 seconds of data
-            sig = np.asarray(green, dtype=np.float32)
-            sig = (sig - np.mean(sig))  # detrend mean
-            filt = _bandpass_butterworth(
-                sig, fps, FREQ_LOW, FREQ_HIGH, FILTER_ORDER)
-            bpm = _estimate_bpm(filt, fps)
-            if bpm is not None:
-                last_bpm = bpm
+        # Compute BPM after acquisition time
+        if len(green) <= acquisition_len:
+            continue
 
-        # Carry-forward last BPM (after first valid estimate)
-        bpm_series[i] = last_bpm if last_bpm is not None else np.nan
+        # Detrend mean, bandpass butterworth, then estimate the bpm via fft
+        sig = np.asarray(green, dtype=np.float32)
+        sig = (sig - np.mean(sig))
+        filt = _bandpass_butterworth(sig, fps, FREQ_LOW, FREQ_HIGH, FILTER_ORDER)
+        bpm = _estimate_bpm(filt, fps)
 
-    # If we never got a BPM, fall back to NaNs → optional: fill with overall median?
-    if np.all(np.isnan(bpm_series)):
-        return np.column_stack([timestamps, bpm_series])
-
-    # Forward-fill NaNs at the beginning (before first estimate) with first valid BPM
-    first_valid = np.argmax(~np.isnan(bpm_series))
-    if not np.isnan(bpm_series[first_valid]):
-        bpm_series[:first_valid] = bpm_series[first_valid]
-
-    # Also fill any intermittent NaNs by carrying forward
-    for i in range(1, n):
-        if np.isnan(bpm_series[i]):
-            bpm_series[i] = bpm_series[i - 1]
+        # Append timestamp and BPM to results
+        if bpm is not None:
+            ts = i * (1 / fps)
+            timestamps.append(ts)
+            bpm_series.append(bpm)
 
     return np.column_stack([timestamps, bpm_series])

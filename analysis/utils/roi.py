@@ -3,7 +3,6 @@ from pathlib import Path
 import mediapipe as mp
 import cv2
 import numpy as np
-
 REUSE_LANDMARKS_FOR = 15    # if detection drops, reuse last landmarks for N frames
 
 # Cheek ROI ratios inside face bbox (x1,y1,x2,y2)
@@ -39,13 +38,12 @@ def _cheek_roi_from_bbox(bb: Tuple[int, int, int, int], w: int, h: int) -> Tuple
     return roi_x1, roi_y1, roi_x2, roi_y2
 
 
-def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Tuple[Frame, float], None, None]:
+def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Frame, None, None]:
     """
     Find ROI for each frame using MediaPipe landmarks.
 
     Returns a generator yielding:
-        roi: np.ndarray of shape (N, M, 3) of all BGR pixels in the ROI.
-        timestamp: the current frame timestamp in ms
+        roi: np.ndarray of shape (H, W, 3) of all BGR pixels in the ROI.
     """
     # Setup landmarker
     model = Path(__file__).resolve().parent / 'face_landmarker.task'
@@ -75,7 +73,7 @@ def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Tuple[Frame, float
                 reuse_left -= 1
             else:
                 # No landmarks, yield empty ROI
-                yield np.mat(data=[[]]), ts_ms
+                yield np.mat(data=[[]])
 
             if last_landmarks is None:
                 continue
@@ -86,4 +84,4 @@ def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Tuple[Frame, float
             roi = bgr[cy1:cy2, cx1:cx2]
 
             # Yield complete ROI
-            yield roi, ts_ms
+            yield roi
