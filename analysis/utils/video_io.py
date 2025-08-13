@@ -5,7 +5,7 @@ import pandas as pd
 import numpy as np
 
 
-def read_video(video_path: str) -> Tuple[List, float]:
+def read_video(video_path: str) -> Tuple[List[cv2.Mat], float]:
     """
     Reads a video file and returns its frames and frame rate.
 
