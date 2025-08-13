@@ -34,9 +34,7 @@ Missing timestamps will be automatically interpolated.
 Use the `main.py` script to apply one degradation technique and evaluate multiple HR measurement techniques:
 
 ```bash
-python main.py --video sample1.mp4 \
-               --degradation spatial_resolution \
-               --methods green_channel
+python main.py --video angus.mp4 --degradation spatial_resolution --methods green_avg
 ```
 
 This will:
