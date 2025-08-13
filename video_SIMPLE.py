@@ -32,17 +32,10 @@ FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode # select mode, e.g VIDEO or LIVE-STREAM
 
 
-# EVM parameters
-# video magnification factor
-ALPHA = 50.0
-# gaussian pyramid level of which to apply magnification, amplify signal, not noise, level 4 = 1/16 resolution
-LEVEL = 4 
-# temporal frequency filter params 
-FREQ_LOW = 0.75 # 45 bpm
-FREQ_HIGH = 1.66 # 198 bpm
-# video frame scale factor
-SCALE_FACTOR = 1.0
 
+# temporal frequency filter params 
+FREQ_LOW = 0.7 # 45 bpm
+FREQ_HIGH = 1.66 # 100 bpm
 
 
 
@@ -77,15 +70,15 @@ def get_avg(roi, color):
 
 
 
-def update_plot(signals, plot, ax):
+def update_plot(signals, line, ax):
 
-    if len(signals) != len(plot):
+    if len(signals) != len(line):
         print("incorrect dimensions")
         return
                     
     for i in range(len(signals)):
-        plot[i].set_ydata(signals[i])
-        plot[i].set_xdata(range(len(signals[i])))
+        line[i].set_ydata(signals[i])
+        line[i].set_xdata(range(len(signals[i])))
 
     # recompute axis limits and update view
     ax.relim()
@@ -130,20 +123,24 @@ def bgr2yiq(frame_bgr):
 
 
 
-def estimate_bpm(filtered_signal, fps):
-    # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
-    fft_vals = np.fft.fft(filtered_signal)
-    # get frequency values in hz
-    freqs = np.fft.fftfreq(len(filtered_signal), d=1/fps)
 
+#get dominant frequency
+
+def estimate_bpm(signal, fps):
+
+    # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
+    fft_vals = np.fft.fft(signal)
+    # get frequency values in hz
+    freqs = np.fft.fftfreq(len(signal), d=1/fps) # d = sampling period
 
     # only keep positive frequencies
     pos_mask = freqs > 0
     freqs = freqs[pos_mask]
-    fft_vals = np.abs(fft_vals[pos_mask])
+    fft_vals = np.abs(fft_vals[pos_mask]) #
 
     # limit to heart rate range 
     mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
+
     # if no frequencies found within heart rate range
     if not np.any(mask):
         return None
@@ -158,8 +155,54 @@ def estimate_bpm(filtered_signal, fps):
     bpm = dominant_freq * 60.0
     return bpm
 
+'''
+def estimate_bpm(signal, fps, return_confidence=False):
+    """
+    Welch PSD-based BPM estimate, refer to medium:
+    'Working with ECG — Heart Rate data, on Python' by Bartek Kulas.
+    """
+    x = np.asarray(signal, dtype=np.float64).ravel()
+
+    # remove drift ?? not sure how effective this is
+    x = x - np.mean(x)
+
+    # Welch params from article Hann window, nperseg=256 (cap at data length), 50% overlap
+    nperseg = min(256, len(x))
+    noverlap = nperseg // 2
+
+    fxx, pxx = sp.welch(
+        x,
+        fs=fps,
+        window="hann",
+        nperseg=nperseg,
+        noverlap=noverlap,
+        detrend="constant",
+        scaling="density",
+        return_onesided=True,
+    )
+
+    # restrict to HR band
+    band = (fxx >= FREQ_LOW) & (fxx <= FREQ_HIGH)
+    if not np.any(band):
+        return None if not return_confidence else (None, None)
+
+    f_band = fxx[band]
+    p_band = pxx[band]
+
+    # peak frequency -> BPM
+    peak_idx = np.argmax(p_band)
+    bpm = float(f_band[peak_idx] * 60.0)
+
+    # simple confidence: peak power vs mean band power
+    conf = float(p_band[peak_idx] / (np.mean(p_band) + 1e-12))
+    return (bpm, conf) if return_confidence else bpm'''
 
 
+
+
+
+
+# TRY USING MOVING AVERAGE FILTER
 def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     """
     Apply Butterworth bandpass filter.
@@ -171,8 +214,8 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     low = freq_lo / nyquist
     high = freq_high / nyquist
     
-    sos = sp.butter(order, [low, high], btype='band', output='sos')
-    filtered = sp.sosfiltfilt(sos, signal, axis=0)
+    sos_butter = sp.butter(order, [low, high], btype='band', output='sos')
+    filtered = sp.sosfiltfilt(sos_butter, signal, axis=0)
     
     return filtered
 
@@ -192,30 +235,31 @@ def main():
     plt.ion()
     _, ax = plt.subplots()
     #line_gf, = ax.plot([], [], label="forehead green", color="dark green")
-    line_gc, = ax.plot([], [], label="cheek green", color="green")
-    line_r, = ax.plot([], [], label="cheek red", color="red")
-    line_b, = ax.plot([], [], label="cheek blue", color="blue")
+    line_gc, = ax.plot([], [], color="green")
+    #line_r, = ax.plot([], [], label="cheek red", color="red")
+    #line_b, = ax.plot([], [], label="cheek blue", color="blue")
 
     ax.set_title("Heart Rate bpm")
     ax.set_xlabel("frame")
     ax.set_ylabel("signal value")
 
-    bpm_green_text = ax.text(0.95, 0.90, '', transform=ax.transAxes, ha='right', va='top')
-    bpm_red_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
-    bpm_blue_text = ax.text(0.95, 0.80, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_green_text = ax.text(0.95, 1, '', transform=ax.transAxes, ha='right', va='top')
+    #bpm_red_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
+    #bpm_blue_text = ax.text(0.95, 0.80, '', transform=ax.transAxes, ha='right', va='top')
 
     ax.legend()
 
     # get model path
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    video_dir = os.path.join(script_dir, 'video-footage')
+    video_dir = os.path.join(script_dir, 'videos')
     model_path = os.path.join(script_dir, "face_landmarker.task")
 
     # select input for VIDEO mode (video file) with user prompt
     print("Select input video file:")
     files = list(os.listdir(video_dir))
     for i, path in enumerate(files):
-        print(f"[{i + 1}] {path}")
+        if path != ".gitignore":
+            print(f"[{i + 1}] {path}")
     choice = int(input().strip()) - 1
 
     if choice < 0 or choice >= len(files):
@@ -265,14 +309,11 @@ def main():
                     process_frame(frame_bgr, last_result.face_landmarks[0])
                 
                 # update dynamic plot
-    
-                #update_plot(green_signal_forehead, green_signal_cheek, line_gf, line_gc, ax)
-                # update_plot(g_forehead, g_cheek, r_cheek, b_cheek, line1, line2, line3, line4, ax)
 
-                signals = [ green_signal_cheek, red_signal_cheek, blue_signal_cheek]
-                plot = [line_gc, line_r, line_b]
+                signals = [green_signal_cheek]
+                lines = [line_gc]
 
-                update_plot(signals, plot, ax)
+                update_plot(signals, lines, ax)
                 
 
 
@@ -281,26 +322,26 @@ def main():
                 if len(green_signal_cheek) > 100:  # ensure enough signal length
                  
                     filtered_green = bandpass_butterworth(np.array(green_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
-                    filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
-                    filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+                    #filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+                    #filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
 
                     bpm_green = estimate_bpm(filtered_green, fps)
-                    bpm_red = estimate_bpm(filtered_red, fps)
-                    bpm_blue = estimate_bpm(filtered_blue, fps)
+                    #bpm_red = estimate_bpm(filtered_red, fps)
+                    #bpm_blue = estimate_bpm(filtered_blue, fps)
 
                     
                     if bpm_green is not None:
                         print(f"Estimated BPM GREEN: {bpm_green:.2f}")
-                        print(f"Estimated BPM RED : {bpm_red:.2f}")
-                        print(f"Estimated BPM BLUE : {bpm_blue:.2f}")
+                        #print(f"Estimated BPM RED : {bpm_red:.2f}")
+                        #print(f"Estimated BPM BLUE : {bpm_blue:.2f}")
                         bpm_green_text.set_text("")
                         bpm_green_text.set_text(f"BPM GREEN: {bpm_green:.1f}")
 
-                        bpm_red_text.set_text("")
+                        '''bpm_red_text.set_text("")
                         bpm_red_text.set_text(f"BPM RED: {bpm_red:.1f}")
 
                         bpm_blue_text.set_text("")
-                        bpm_blue_text.set_text(f"BPM BLUE: {bpm_blue:.1f}")
+                        bpm_blue_text.set_text(f"BPM BLUE: {bpm_blue:.1f}")'''
 
   
 
@@ -321,4 +362,3 @@ def main():
 
 
 main()
-
