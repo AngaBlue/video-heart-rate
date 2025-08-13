@@ -2,3 +2,5 @@
 *.csv
 __pycache__
 analysis/results
+.venv
+.DS_Store
