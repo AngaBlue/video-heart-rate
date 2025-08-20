@@ -1,2 +1,1 @@
  - Validate green channel avg measurement method
- - Move ROI selection to utils 
