@@ -42,6 +42,12 @@ This will:
  - Measure average heart rate from each degraded video using selected methods.
  - Save results in `results/` and generate comparison metrics plots.
 
+If you omit the degradation, only the control video will be tested.
+
+```bash
+python main.py --video angus.mp4 --methods green_avg
+```
+
 ## 📁 Project Structure
 ```
 video_hr_analysis/

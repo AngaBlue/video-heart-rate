@@ -10,6 +10,7 @@ VIDEOS_DIR = "videos"
 RESULTS_DIR = "results"
 DEGRADATION_DIR = "degradation"
 MEASUREMENT_DIR = "measurement"
+ORIGINAL = 'original'
 
 
 def dynamic_import(module_path: str):
@@ -18,6 +19,9 @@ def dynamic_import(module_path: str):
 
 def apply_degradation(degradation_type, video_path):
     """Yield tuples of (degraded_video_path, label)"""
+    if degradation_type == ORIGINAL:
+        return [(video_path, ORIGINAL)]
+
     module = dynamic_import(f"{DEGRADATION_DIR}.{degradation_type}")
     return module.apply(video_path)  # Expected to be a generator
 
@@ -33,7 +37,7 @@ def main():
     parser.add_argument('--video', type=str, required=True,
                         help='Input video filename')
     parser.add_argument('--degradation', type=str,
-                        required=True, help='Degradation technique to use')
+                        required=False, default=ORIGINAL, help='Degradation technique to use.  If not provided, only the original video will be tested')
     parser.add_argument('--methods', nargs='+', required=True,
                         help='Measurement methods to apply')
     args = parser.parse_args()
@@ -60,9 +64,10 @@ def main():
     truth_results = read_truth_for_video(truth_path)
 
     base_name = Path(video_file).stem
-    degradation_dir = os.path.join(
-        RESULTS_DIR, base_name, "degraded", degradation)
-    os.makedirs(degradation_dir, exist_ok=True)
+    if degradation != ORIGINAL:
+        degradation_dir = os.path.join(
+            RESULTS_DIR, base_name, "degraded", degradation)
+        os.makedirs(degradation_dir, exist_ok=True)
 
     # Store time series estimates for each method per degraded version
     results = {method: {} for method in methods}
