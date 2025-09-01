@@ -8,6 +8,8 @@ import scipy.signal as sp
 from collections import deque
 from glob import glob
 import colorsys 
+import heartpy as hp
+
 
 # signal storage
 green_signal_forehead = deque(maxlen=500) # we dont need old frames
@@ -19,11 +21,6 @@ blue_signal_cheek = deque(maxlen=500)
 
 last_result = None
 
-# after evm
-filtered_forehead = deque(maxlen=100) # we dont need old frames
-filtered_cheek = deque(maxlen=100)
-
-
 # MediaPipe setup (thank u papa google)
 BaseOptions = mp.tasks.BaseOptions # load model
 FaceLandmarker = mp.tasks.vision.FaceLandmarker # create landmarker object
@@ -32,8 +29,7 @@ FaceLandmarkerResult = mp.tasks.vision.FaceLandmarkerResult
 VisionRunningMode = mp.tasks.vision.RunningMode # select mode, e.g VIDEO or LIVE-STREAM
 
 
-
-# temporal frequency filter params 
+#  bpm limits
 FREQ_LOW = 0.7 # 45 bpm
 FREQ_HIGH = 1.66 # 100 bpm
 
@@ -210,7 +206,7 @@ def estimate_bpm_welch(signal, fps,  ax=None, label='Welch PSD'):
     if ax is not None:
         ax.cla()
 
-        # full spectrum
+        # full spectrum of psd
         ax.plot(freqs, psd, lw=1, label='Welch PSD')
 
         # shade HR band
@@ -226,7 +222,7 @@ def estimate_bpm_welch(signal, fps,  ax=None, label='Welch PSD'):
         ax.set_ylabel('Power spectral density')
         ax.grid(True, alpha=0.3)
 
-        # x-limits: focus on 0–3 Hz (~0–180 BPM); adjust if you like
+        # x-limits: 0–3 Hz (~0–180 BPM)
         ax.set_xlim(0, max(3.0, FREQ_HIGH + 0.2))
 
         ax.legend(loc='upper right')
@@ -234,7 +230,6 @@ def estimate_bpm_welch(signal, fps,  ax=None, label='Welch PSD'):
         ax.figure.canvas.flush_events()
 
     return bpm
-
 
 
 
@@ -258,6 +253,7 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
  
 
 
+
 def main():
 
     print("PRESS q to quit -- PRESS spacebar to pause")
@@ -270,22 +266,28 @@ def main():
 
     # setup interactive plot
     plt.ion()
+
+    # green signal plot
     _, ax = plt.subplots()
-    #line_gf, = ax.plot([], [], label="forehead green", color="dark green")
-    line_gc, = ax.plot([], [], color="green")
-    #line_r, = ax.plot([], [], label="cheek red", color="red")
-    #line_b, = ax.plot([], [], label="cheek blue", color="blue")
-
-    fig_fft, ax_fft = plt.subplots()
-    fig_welch, ax_welch = plt.subplots()
-
     ax.set_title("Heart Rate bpm")
     ax.set_xlabel("frame")
     ax.set_ylabel("signal value")
+    line_gc, = ax.plot([], [], color="green")
 
-    bpm_green_text = ax.text(0.95, 1, '', transform=ax.transAxes, ha='right', va='top')
-    #bpm_red_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
-    #bpm_blue_text = ax.text(0.95, 0.80, '', transform=ax.transAxes, ha='right', va='top')
+    # estimating bpm visualisations
+    _, ax_fft = plt.subplots()
+    _, ax_welch = plt.subplots()
+
+   
+
+    """
+    bpm modes: green/red/blue
+    bpm modes: heartpy/welch/fft
+    """ 
+
+    bpm_hp_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_welch_text = ax.text(0.95, 0.9, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_fft_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
 
     ax.legend()
 
@@ -349,35 +351,31 @@ def main():
                 signals = [green_signal_cheek]
                 lines = [line_gc]
                 update_plot(signals, lines, ax)
-                
+
 
                 # apply bandpass filter to cheek signal, using 2nd order butterworth
                 if len(green_signal_cheek) > 100:  # ensure enough signal length
                  
                     filtered_green = bandpass_butterworth(np.array(green_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
-                    #filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
-                    #filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
-
-                    bpm_green = estimate_bpm(filtered_green, fps)
-                    bpm_green_welch = estimate_bpm_welch(filtered_green, fps)
-                    #bpm_red = estimate_bpm(filtered_red, fps)
-                    #bpm_blue = estimate_bpm(filtered_blue, fps)
 
                     bpm_fft = estimate_bpm(filtered_green, fps, ax=ax_fft, label='FFT')
                     bpm_welch = estimate_bpm_welch(filtered_green, fps, ax=ax_welch, label='Welch PSD')
+
+                    # --- HeartPy --- fails to work on non-filtered (pre-bandpass butterworth signal)
+                    try:
+    
+                        wd, hp_metrics = hp.process(filtered_green, sample_rate=int(fps), bpmmin=FREQ_LOW*60, bpmmax=FREQ_HIGH*60)
+                        print(f"[HeartPy] BPM: {hp_metrics['bpm']:.2f}")
+                    except Exception as e:
+                        print("HeartPy error:", e)
                     
-                    if bpm_green is not None:
-                        print(f"Estimated BPM welch: {bpm_green_welch:.2f}, non-welch: {bpm_green:.2f} ")
-                        #print(f"Estimated BPM RED : {bpm_red:.2f}")
-                        #print(f"Estimated BPM BLUE : {bpm_blue:.2f}")
-                        bpm_green_text.set_text("")
-                        bpm_green_text.set_text(f"BPM GREEN: {bpm_green:.1f}")
-
-                        '''bpm_red_text.set_text("")
-                        bpm_red_text.set_text(f"BPM RED: {bpm_red:.1f}")
-
-                        bpm_blue_text.set_text("")
-                        bpm_blue_text.set_text(f"BPM BLUE: {bpm_blue:.1f}")'''
+                    # print bpm to console
+                    print(f"Estimated BPM welch: {bpm_welch:.2f}, fft: {bpm_fft:.2f} ")
+                    
+                    # display bpm text on live graph
+                    bpm_hp_text.set_text(""); bpm_hp_text.set_text(f"BPM HeartPy: {hp_metrics['bpm']:.2f}")
+                    bpm_welch_text.set_text(""); bpm_welch_text.set_text(f"BPM Welch: {bpm_welch:.1f}")
+                    bpm_fft_text.set_text(""); bpm_fft_text.set_text(f"BPM FFT: {bpm_fft:.1f}")
 
 
             else:
