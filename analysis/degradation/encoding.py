@@ -20,11 +20,6 @@ CODECS = {
 }
 
 
-
-
-
-
-
 def run_ffmpeg(input_path: str, output_path: str, codec_args: list) -> None:
     """
     Runs ffmpeg to encode a video with given codec arguments.
@@ -50,6 +45,3 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
 
         run_ffmpeg(input_path, str(out_path), cfg["args"])
         yield str(out_path), label
-
-
-
