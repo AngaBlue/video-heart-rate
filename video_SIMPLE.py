@@ -155,47 +155,55 @@ def estimate_bpm(signal, fps):
     bpm = dominant_freq * 60.0
     return bpm
 
-'''
-def estimate_bpm(signal, fps, return_confidence=False):
-    """
-    Welch PSD-based BPM estimate, refer to medium:
-    'Working with ECG — Heart Rate data, on Python' by Bartek Kulas.
-    """
-    x = np.asarray(signal, dtype=np.float64).ravel()
 
-    # remove drift ?? not sure how effective this is
-    x = x - np.mean(x)
+def estimate_bpm_welch(signal, fps):
+    """
+    Estimate BPM using Welch's PSD.
+    """
 
-    # Welch params from article Hann window, nperseg=256 (cap at data length), 50% overlap
-    nperseg = min(256, len(x))
+    x = np.asarray(signal, dtype=np.float32)
+
+    # detrend to suppress DC and slow drift
+    x = x - np.nanmean(x)
+    
+
+    # Choose Welch params: ~4–8 s windows if available, with 50% overlap
+    target_seconds = 6.0
+    # split signal into shorter segments between 128 and 2048, never exceed length
+    # segment length affects frequency resolution and variance
+    # larger nperseg = finer BPM resolution, but noisier PSD
+
+    # check surrounding bpm, are we quantising ??
+    nperseg = int(min(len(x), max(128, min(int(fps * target_seconds), 2048))))
     noverlap = nperseg // 2
 
-    fxx, pxx = sp.welch(
-        x,
-        fs=fps,
-        window="hann",
-        nperseg=nperseg,
-        noverlap=noverlap,
-        detrend="constant",
-        scaling="density",
-        return_onesided=True,
+    # Welch PSD: how the power of a signal is distributed across frequencies.
+    freqs, psd = sp.welch(
+        x, fs=fps, window='hann', nperseg=nperseg, noverlap=noverlap,
+        detrend='constant', scaling='density', average='mean' # average="median" if more noisy
     )
+    
+    # limit to heart-rate band
+    band_mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
+    if not np.any(band_mask):
+        return None
 
-    # restrict to HR band
-    band = (fxx >= FREQ_LOW) & (fxx <= FREQ_HIGH)
-    if not np.any(band):
-        return None if not return_confidence else (None, None)
+    f_band = freqs[band_mask]
+    p_band = psd[band_mask]
+    if p_band.size == 0 or np.all(p_band <= 0):
+        return None
 
-    f_band = fxx[band]
-    p_band = pxx[band]
+    # Peak in-band
+    k = int(np.argmax(p_band))
+    f_peak = f_band[k]
 
-    # peak frequency -> BPM
-    peak_idx = np.argmax(p_band)
-    bpm = float(f_band[peak_idx] * 60.0)
+    # Convert to BPM
+    bpm = float(f_peak * 60.0)
+    return bpm
 
-    # simple confidence: peak power vs mean band power
-    conf = float(p_band[peak_idx] / (np.mean(p_band) + 1e-12))
-    return (bpm, conf) if return_confidence else bpm'''
+
+
+
 
 
 
@@ -325,7 +333,7 @@ def main():
                     #filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
                     #filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
 
-                    bpm_green = estimate_bpm(filtered_green, fps)
+                    bpm_green = estimate_bpm_welch(filtered_green, fps)
                     #bpm_red = estimate_bpm(filtered_red, fps)
                     #bpm_blue = estimate_bpm(filtered_blue, fps)
 
