@@ -24,3 +24,6 @@ The following resources have been used to create this project:
  - https://people.csail.mit.edu/mrub/papers/vidmag.pdf - EVM, video footage
  - https://github.com/itberrios/CV_projects/tree/main/color_mag - Python implementation of EVM
  - https://www.sciencedirect.com/science/article/pii/S0957417423006371?via%3Dihub#s0025 - Overall structure 
+
+
+NOTE: if you want to use recorded iphone footage, iPhone: Settings → Camera → Record Video → disable HDR., else footage is super pale

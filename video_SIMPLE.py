@@ -60,6 +60,7 @@ def get_roi_coords(bb_x1, bb_y1, bb_x2, bb_y2, horizontal_ratio, top_ratio, bott
 
 
 
+
 def get_avg(roi, color):
     """
     red = 0
@@ -104,12 +105,12 @@ def process_frame(frame_bgr, landmarks):
     roi_cheek = frame_bgr[c_y1:c_y2, c_x1:c_x2]
 
     # get average signal of green channel
-    green_signal_forehead.append(get_avg(roi_forehead, 1))  # height, width, color
+   #green_signal_forehead.append(get_avg(roi_forehead, 1))  # height, width, color
     green_signal_cheek.append(get_avg(roi_cheek, 1))
 
     # testing, compare with red and blue signals
-    red_signal_cheek.append(get_avg(roi_cheek, 0))
-    blue_signal_cheek.append(get_avg(roi_cheek, 2))
+    #red_signal_cheek.append(get_avg(roi_cheek, 0))
+    #blue_signal_cheek.append(get_avg(roi_cheek, 2))
 
 
     
@@ -124,39 +125,52 @@ def bgr2yiq(frame_bgr):
 
 
 
-#get dominant frequency
-
-def estimate_bpm(signal, fps):
+def estimate_bpm(signal, fps, ax=None, label='FFT'):
+    """
+    using FFT, get largest peak to estimate bpm
+    """
 
     # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
     fft_vals = np.fft.fft(signal)
     # get frequency values in hz
     freqs = np.fft.fftfreq(len(signal), d=1/fps) # d = sampling period
-
-    # only keep positive frequencies
-    pos_mask = freqs > 0
-    freqs = freqs[pos_mask]
-    fft_vals = np.abs(fft_vals[pos_mask]) #
+    magnitudes = np.abs(fft_vals)
 
     # limit to heart rate range 
     mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
-
     # if no frequencies found within heart rate range
     if not np.any(mask):
         return None
 
-    freqs_in_band = freqs[mask]
-    magnitudes = fft_vals[mask]
+    freqs_band = freqs[mask]
+    mags_band  = magnitudes[mask]
 
-    # get frequency with max power (largest magnitude)
-    dominant_freq = freqs_in_band[np.argmax(magnitudes)]
+    # dominant in-band frequency
+    k = int(np.argmax(mags_band))
+    f_peak = float(freqs_band[k])
+    bpm = f_peak * 60.0
 
-    # convert Hz to BPM
-    bpm = dominant_freq * 60.0
+    # plotting
+    if ax is not None:
+        ax.cla()
+        ax.plot(freqs, magnitudes, lw=1, label='|FFT|')
+        band_mags = np.where(mask, magnitudes, np.nan)
+        ax.plot(freqs, band_mags, lw=2, label='HR band')
+        ax.plot([f_peak], [mags_band[k]], 'o', ms=8)
+        ax.set_title(f'{label} spectrum (peak → {bpm:.1f} bpm)')
+        ax.set_xlabel('Frequency (Hz)')
+        ax.set_ylabel('Magnitude')
+        ax.legend()
+        ax.figure.canvas.draw()
+        ax.figure.canvas.flush_events()
+
+
     return bpm
 
 
-def estimate_bpm_welch(signal, fps):
+
+
+def estimate_bpm_welch(signal, fps,  ax=None, label='Welch PSD'):
     """
     Estimate BPM using Welch's PSD.
     """
@@ -165,16 +179,12 @@ def estimate_bpm_welch(signal, fps):
 
     # detrend to suppress DC and slow drift
     x = x - np.nanmean(x)
-    
 
-    # Choose Welch params: ~4–8 s windows if available, with 50% overlap
-    target_seconds = 6.0
-    # split signal into shorter segments between 128 and 2048, never exceed length
-    # segment length affects frequency resolution and variance
-    # larger nperseg = finer BPM resolution, but noisier PSD
-
-    # check surrounding bpm, are we quantising ??
-    nperseg = int(min(len(x), max(128, min(int(fps * target_seconds), 2048))))
+    # Welch params: Responsiveness vs resolution: 
+    # shorter segments react faster but quantize coarsely, longer segments smoother but lag
+    # breaks the signal into overlapping windows of ~9 seconds each
+    window_seconds = 9
+    nperseg = int(min(len(x), fps * window_seconds)) # window length
     noverlap = nperseg // 2
 
     # Welch PSD: how the power of a signal is distributed across frequencies.
@@ -190,21 +200,40 @@ def estimate_bpm_welch(signal, fps):
 
     f_band = freqs[band_mask]
     p_band = psd[band_mask]
-    if p_band.size == 0 or np.all(p_band <= 0):
-        return None
 
-    # Peak in-band
+    # dominant in-band frequency
     k = int(np.argmax(p_band))
     f_peak = f_band[k]
-
-    # Convert to BPM
     bpm = float(f_peak * 60.0)
+
+    # visualisation
+    if ax is not None:
+        ax.cla()
+
+        # full spectrum
+        ax.plot(freqs, psd, lw=1, label='Welch PSD')
+
+        # shade HR band
+        ax.fill_between(freqs, psd, where=band_mask, step='mid', alpha=0.25, label='HR band')
+
+        # mark dominant in-band frequency
+        ax.axvline(f_peak, linestyle='--', linewidth=1)
+        ax.plot([f_peak], [p_band[k]], 'o', ms=7)
+
+        # annotate
+        ax.set_title(f'{label}: peak {f_peak:.3f} Hz  →  {bpm:.1f} BPM')
+        ax.set_xlabel('Frequency (Hz)')
+        ax.set_ylabel('Power spectral density')
+        ax.grid(True, alpha=0.3)
+
+        # x-limits: focus on 0–3 Hz (~0–180 BPM); adjust if you like
+        ax.set_xlim(0, max(3.0, FREQ_HIGH + 0.2))
+
+        ax.legend(loc='upper right')
+        ax.figure.canvas.draw()
+        ax.figure.canvas.flush_events()
+
     return bpm
-
-
-
-
-
 
 
 
@@ -226,7 +255,7 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     filtered = sp.sosfiltfilt(sos_butter, signal, axis=0)
     
     return filtered
-
+ 
 
 
 def main():
@@ -246,6 +275,9 @@ def main():
     line_gc, = ax.plot([], [], color="green")
     #line_r, = ax.plot([], [], label="cheek red", color="red")
     #line_b, = ax.plot([], [], label="cheek blue", color="blue")
+
+    fig_fft, ax_fft = plt.subplots()
+    fig_welch, ax_welch = plt.subplots()
 
     ax.set_title("Heart Rate bpm")
     ax.set_xlabel("frame")
@@ -277,7 +309,6 @@ def main():
     path = os.path.join(video_dir, files[choice])
     cam = cv.VideoCapture(path)
     running_mode = VisionRunningMode.VIDEO
-    use_callback = False
 
     landmarker = setup_face_landmarker(model_path, running_mode)
 
@@ -307,39 +338,36 @@ def main():
                 frame_rgb = cv.cvtColor(frame_bgr, cv.COLOR_BGR2RGB)
                 mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_rgb)
 
-                timestamp = int(time.time() * 1000) if use_callback else int(cam.get(cv.CAP_PROP_POS_MSEC))
-                if use_callback:
-                    landmarker.detect_async(mp_image, timestamp)
-                else:
-                    last_result = landmarker.detect_for_video(mp_image, timestamp)
+                timestamp = int(cam.get(cv.CAP_PROP_POS_MSEC))
+                last_result = landmarker.detect_for_video(mp_image, timestamp)
 
+                # if we have detected landmarks, process frame
                 if last_result and last_result.face_landmarks:
                     process_frame(frame_bgr, last_result.face_landmarks[0])
                 
-                # update dynamic plot
-
+                # update dynamic plot (unecessary to make dynamic for non-live footage, maybe change this later)
                 signals = [green_signal_cheek]
                 lines = [line_gc]
-
                 update_plot(signals, lines, ax)
                 
 
-
                 # apply bandpass filter to cheek signal, using 2nd order butterworth
-
                 if len(green_signal_cheek) > 100:  # ensure enough signal length
                  
                     filtered_green = bandpass_butterworth(np.array(green_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
                     #filtered_red = bandpass_butterworth(np.array(red_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
                     #filtered_blue = bandpass_butterworth(np.array(blue_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
 
-                    bpm_green = estimate_bpm_welch(filtered_green, fps)
+                    bpm_green = estimate_bpm(filtered_green, fps)
+                    bpm_green_welch = estimate_bpm_welch(filtered_green, fps)
                     #bpm_red = estimate_bpm(filtered_red, fps)
                     #bpm_blue = estimate_bpm(filtered_blue, fps)
 
+                    bpm_fft = estimate_bpm(filtered_green, fps, ax=ax_fft, label='FFT')
+                    bpm_welch = estimate_bpm_welch(filtered_green, fps, ax=ax_welch, label='Welch PSD')
                     
                     if bpm_green is not None:
-                        print(f"Estimated BPM GREEN: {bpm_green:.2f}")
+                        print(f"Estimated BPM welch: {bpm_green_welch:.2f}, non-welch: {bpm_green:.2f} ")
                         #print(f"Estimated BPM RED : {bpm_red:.2f}")
                         #print(f"Estimated BPM BLUE : {bpm_blue:.2f}")
                         bpm_green_text.set_text("")
@@ -351,12 +379,13 @@ def main():
                         bpm_blue_text.set_text("")
                         bpm_blue_text.set_text(f"BPM BLUE: {bpm_blue:.1f}")'''
 
-  
 
             else:
                 frame_bgr = last_frame
 
             cv.imshow("face landmarker with rois", frame_bgr)
+
+            
             
             key = cv.waitKey(1) & 0xFF # wait 1 ms, then extract keycode
             if key == ord('q'):

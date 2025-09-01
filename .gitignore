@@ -1,6 +1,7 @@
 *.mp4
 *.MP4
 *.csv
+*.MOV
 __pycache__
 analysis/results
 .venv
