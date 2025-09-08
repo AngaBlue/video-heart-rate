@@ -4,8 +4,8 @@ from utils.estimate_bpm import estimate_bpm
 from utils.roi import get_roi
 from utils.video_io import read_video
 
-WINDOW_SIZE = 10.0  # seconds
-ACQUISITION_TIME = 5.0  # seconds
+WINDOW_SIZE = 30.0  # seconds
+ACQUISITION_TIME = 10.0  # seconds
 
 
 def measure(video_path: str) -> np.ndarray:
@@ -35,7 +35,7 @@ def measure(video_path: str) -> np.ndarray:
         green.append(green_val)
 
         # Compute BPM after acquisition time
-        if len(green) <= acquisition_len:
+        if len(green) < acquisition_len:
             continue
 
         # Detrend mean, bandpass butterworth, then estimate the bpm via fft
