@@ -11,8 +11,7 @@ GOP = 10  # seconds
 
 def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     """
-    Produce 5 variants while varying H264 CRF.
-    Yields (output_path, label).
+    Applies temporal compression to the video by varying H264 CRF.
     """
     base_name = Path(input_path).stem
     output_root = Path("results") / base_name / "encoded_crf"
