@@ -29,7 +29,7 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
         if not out_path.exists():
             cmd = [
                 "ffmpeg", "-y", "-i", input_path,
-                "-c:v", "libx264", "-preset", "medium",
+                "-c:v", "libx264",
                 "-crf", str(crf),
                 "-g", str(gop),
                 # fixed B-frames (constant across outputs)
