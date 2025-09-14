@@ -1,8 +1,12 @@
+import contextlib
+import sys
+import os
+import numpy as np
+import cv2
 from typing import Generator, Tuple, Sequence, Any, List, Optional
 from pathlib import Path
 import mediapipe as mp
-import cv2
-import numpy as np
+
 REUSE_LANDMARKS_FOR = 15    # if detection drops, reuse last landmarks for N frames
 
 # Cheek ROI ratios inside face bbox (x1,y1,x2,y2)
@@ -19,7 +23,24 @@ Frame = np.ndarray[Any, np.dtype[np.integer[Any] | np.floating[Any]]]
 Landmarks = List
 
 
-def bbox_from_landmarks(landmarks: Landmarks, w: int, h: int) -> Tuple[int, int, int, int]:
+@contextlib.contextmanager
+def _silence_output():
+    sys.stdout.flush()
+    sys.stderr.flush()
+    saved_out, saved_err = os.dup(1), os.dup(2)
+    try:
+        with open(os.devnull, 'wb') as devnull:
+            os.dup2(devnull.fileno(), 1)
+            os.dup2(devnull.fileno(), 2)
+            yield
+    finally:
+        os.dup2(saved_out, 1)
+        os.dup2(saved_err, 2)
+        os.close(saved_out)
+        os.close(saved_err)
+
+
+def _bbox_from_landmarks(landmarks: Landmarks, w: int, h: int) -> Tuple[int, int, int, int]:
     xs = [lm.x for lm in landmarks]
     ys = [lm.y for lm in landmarks]
     x1 = int(max(0, min(xs) * w))
@@ -52,7 +73,8 @@ def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Frame, None, None]
         running_mode=VisionRunningMode.VIDEO,
         num_faces=1,
     )
-    landmarker = FaceLandmarker.create_from_options(options)
+    with _silence_output():
+        landmarker = FaceLandmarker.create_from_options(options)
 
     # Detect
     last_landmarks: Optional[Landmarks] = None
@@ -79,7 +101,7 @@ def get_roi(frames: Sequence[Frame], fps: float) -> Generator[Frame, None, None]
                 continue
 
             # ROI from landmarks
-            bb = bbox_from_landmarks(last_landmarks, w, h)
+            bb = _bbox_from_landmarks(last_landmarks, w, h)
             cx1, cy1, cx2, cy2 = _cheek_roi_from_bbox(bb, w, h)
             roi = bgr[cy1:cy2, cx1:cx2]
 
