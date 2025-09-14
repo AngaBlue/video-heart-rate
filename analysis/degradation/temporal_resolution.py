@@ -27,7 +27,7 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     yield str(input_path), _format_fps_label(fps)
 
     # Generate degraded videos
-    for target_fps in TARGET_FPS:
+    for target_fps in filter(lambda x: x < fps, TARGET_FPS):
         if target_fps >= fps:
             continue
 
