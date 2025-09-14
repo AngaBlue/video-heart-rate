@@ -17,10 +17,6 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     output_root = Path("results") / base_name / "degraded" / "crf"
     os.makedirs(output_root, exist_ok=True)
 
-    # Read original framerate
-    _, fps = read_video(input_path)
-    gop = floor(GOP * fps)
-
     yield str(input_path), "original"
 
     # Generate degraded videos
@@ -28,10 +24,9 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
         out_path = output_root / f"{crf}.mp4"
         if not out_path.exists():
             cmd = [
-                "ffmpeg", "-y", "-i", input_path,
+                "ffmpeg", "-i", input_path,
                 "-c:v", "libx264",
                 "-crf", str(crf),
-                "-g", str(gop),
                 # fixed B-frames (constant across outputs)
                 "-bf", "4",
                 "-pix_fmt", "yuv420p",
