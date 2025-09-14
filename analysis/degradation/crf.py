@@ -15,7 +15,7 @@ def apply(input_path: str) -> Generator[Tuple[str, str], None, None]:
     Yields (output_path, label).
     """
     base_name = Path(input_path).stem
-    output_root = Path("results") / base_name / "encoded_crf"
+    output_root = Path("results") / base_name / "degraded" / "crf"
     os.makedirs(output_root, exist_ok=True)
 
     # Read original framerate
