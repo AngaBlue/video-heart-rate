@@ -13,7 +13,7 @@ import heartpy as hp
 
 # signal storage
 green_signal_forehead = deque(maxlen=500) # we dont need old frames
-green_signal_cheek = deque(maxlen=500)
+green_signal_cheek = deque(maxlen=1000)
 
 # testing other color signals
 red_signal_cheek = deque(maxlen=500) 
@@ -31,7 +31,7 @@ VisionRunningMode = mp.tasks.vision.RunningMode # select mode, e.g VIDEO or LIVE
 
 #  bpm limits
 FREQ_LOW = 0.7 # 45 bpm
-FREQ_HIGH = 1.66 # 100 bpm
+FREQ_HIGH = 2 # 120 bpm (MAYBE MAKE THIS IGHER)
 
 
 
@@ -65,6 +65,11 @@ def get_avg(roi, color):
     """
     return np.mean(roi[:, :, color]) # height, width, color
 
+
+"""MOVING WINDOW DO ITTTTTTTTTTTTTTTTTTTTT
+test with more robust iphone data -> 
+
+"""
 
 
 def update_plot(signals, line, ax):
@@ -126,11 +131,10 @@ def estimate_bpm(signal, fps, ax=None, label='FFT'):
     using FFT, get largest peak to estimate bpm
     """
 
-    # compute FFT of signal to convert from time to frequency domain  (amplitude and phase)
-    fft_vals = np.fft.fft(signal)
+    # compute FFT of signal to convert from time to frequency domain  (5
     # get frequency values in hz
     freqs = np.fft.fftfreq(len(signal), d=1/fps) # d = sampling period
-    magnitudes = np.abs(fft_vals)
+    magnitudes = np.abs(freqs)
 
     # limit to heart rate range 
     mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
@@ -162,7 +166,6 @@ def estimate_bpm(signal, fps, ax=None, label='FFT'):
 
 
     return bpm
-
 
 
 
@@ -278,7 +281,6 @@ def main():
     _, ax_fft = plt.subplots()
     _, ax_welch = plt.subplots()
 
-   
 
     """
     bpm modes: green/red/blue
