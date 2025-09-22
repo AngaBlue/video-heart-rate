@@ -15,6 +15,19 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## Development
+To speed up processing, the video can be degraded significantly to reduce unnecessary information using the following command.
+
+```bash
+ffmpeg -y -i .\videos\angus.mp4 -c:v libx264 -vf scale=144:-2 -r 5 -an -pix_fmt yuv420p -crf 20 .\videos\angus-degraded.mp4
+```
+
+This will:
+ - Re-encode the video with H.264
+ - Reduce the framerate to 5 FPS.
+ - Reduce the resolution to 144p.
+ - Set the constant rate factor (CRF) to 20.
+
 ## 📝 Notes
 The pause functionality only works if the CV window is active.
 
