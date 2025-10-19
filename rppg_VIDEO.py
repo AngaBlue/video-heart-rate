@@ -8,7 +8,7 @@ import scipy.signal as sp
 from collections import deque
 from glob import glob
 import colorsys 
-import heartpy as hp
+
 
 
 # signal storage
@@ -134,7 +134,7 @@ def estimate_bpm(signal, fps, ax=None, label='FFT'):
     # compute FFT of signal to convert from time to frequency domain  (5
     # get frequency values in hz
     freqs = np.fft.fftfreq(len(signal), d=1/fps) # d = sampling period
-    magnitudes = np.abs(freqs)
+    magnitudes = np.abs(np.fft.fft(signal))
 
     # limit to heart rate range 
     mask = (freqs >= FREQ_LOW) & (freqs <= FREQ_HIGH)
@@ -236,8 +236,8 @@ def estimate_bpm_welch(signal, fps,  ax=None, label='Welch PSD'):
 
 
 
+# FILTERS 
 
-# TRY USING MOVING AVERAGE FILTER
 def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     """
     Apply Butterworth bandpass filter.
@@ -254,6 +254,40 @@ def bandpass_butterworth(signal, fps, freq_lo, freq_high, order):
     
     return filtered
  
+
+
+def bandpass_fir(signal, fps, freq_lo, freq_high, numtaps=41):
+
+    nyquist = 0.5 * fps
+    low = freq_lo / nyquist
+    high = freq_high / nyquist
+
+    # FIR filter 
+    fir_coeff = sp.firwin(numtaps, [low, high], pass_zero=False, window='hamming')
+
+    # Zero-phase filtering
+    filtered = sp.filtfilt(fir_coeff, [1.0], signal, axis=0)
+
+    return filtered
+
+
+def bandpass_cheby2(signal, fps, freq_lo, freq_high, order=4, stopband_atten=40):
+    """
+    Apply a 4th-order Chebyshev Type II bandpass filter (SOS form) -> reccomended
+    """
+
+    nyquist = 0.5 * fps
+    low = freq_lo / nyquist
+    high = freq_high / nyquist
+
+    #  Chebyshev Type II filter in second-order sections
+    sos_cheby2 = sp.cheby2(order, stopband_atten, [low, high], btype='band', output='sos')
+
+    # Apply zero-phase forward-backward filtering
+    filtered = sp.sosfiltfilt(sos_cheby2, signal, axis=0)
+
+    return filtered
+
 
 
 
@@ -278,18 +312,18 @@ def main():
     line_gc, = ax.plot([], [], color="green")
 
     # estimating bpm visualisations
-    _, ax_fft = plt.subplots()
-    _, ax_welch = plt.subplots()
+    _, ax_cheby2 = plt.subplots()
+    _, ax_butter = plt.subplots()
 
 
     """
     bpm modes: green/red/blue
-    bpm modes: heartpy/welch/fft
+    bpm filters: cheby2/butterworth
     """ 
 
-    bpm_hp_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, ha='right', va='top')
-    bpm_welch_text = ax.text(0.95, 0.9, '', transform=ax.transAxes, ha='right', va='top')
-    bpm_fft_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_cheby2_text = ax.text(0.95, 0.95, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_butter_text = ax.text(0.95, 0.9, '', transform=ax.transAxes, ha='right', va='top')
+    bpm_fir_text = ax.text(0.95, 0.85, '', transform=ax.transAxes, ha='right', va='top')
 
     ax.legend()
 
@@ -355,29 +389,30 @@ def main():
                 update_plot(signals, lines, ax)
 
 
-                # apply bandpass filter to cheek signal, using 2nd order butterworth
-                if len(green_signal_cheek) > 100:  # ensure enough signal length
-                 
-                    filtered_green = bandpass_butterworth(np.array(green_signal_cheek, dtype=np.float32), fps, FREQ_LOW, FREQ_HIGH, order=2)
+                # moving window rPPG analysis
+                window_seconds = 10
+                window_len = int(fps * window_seconds)
 
-                    bpm_fft = estimate_bpm(filtered_green, fps, ax=ax_fft, label='FFT')
-                    bpm_welch = estimate_bpm_welch(filtered_green, fps, ax=ax_welch, label='Welch PSD')
+                if len(green_signal_cheek) > window_len:
+                    # get most recent N-second window
+                    window_signal = np.array(green_signal_cheek)[-window_len:]
+                    window_signal = window_signal - np.mean(window_signal)  # detrend
 
-                    # --- HeartPy --- fails to work on non-filtered (pre-bandpass butterworth signal)
-                    try:
-    
-                        wd, hp_metrics = hp.process(filtered_green, sample_rate=int(fps), bpmmin=FREQ_LOW*60, bpmmax=FREQ_HIGH*60)
-                        print(f"[HeartPy] BPM: {hp_metrics['bpm']:.2f}")
-                    except Exception as e:
-                        print("HeartPy error:", e)
-                    
-                    # print bpm to console
-                    print(f"Estimated BPM welch: {bpm_welch:.2f}, fft: {bpm_fft:.2f} ")
-                    
-                    # display bpm text on live graph
-                    bpm_hp_text.set_text(""); bpm_hp_text.set_text(f"BPM HeartPy: {hp_metrics['bpm']:.2f}")
-                    bpm_welch_text.set_text(""); bpm_welch_text.set_text(f"BPM Welch: {bpm_welch:.1f}")
-                    bpm_fft_text.set_text(""); bpm_fft_text.set_text(f"BPM FFT: {bpm_fft:.1f}")
+                    # filter within heart-rate band using both filters
+                    filtered_butter = bandpass_butterworth(window_signal, fps, FREQ_LOW, FREQ_HIGH, order=2)
+                    filtered_cheby2 = bandpass_cheby2(window_signal, fps, FREQ_LOW, FREQ_HIGH, order=4)
+                    filtered_fir = bandpass_fir(window_signal, fps, FREQ_LOW, FREQ_HIGH)
+
+                    # estimate BPMs
+                    bpm_butter = estimate_bpm_welch(filtered_butter, fps, ax=ax_butter, label='Butterworth PSD')
+                    bpm_cheby2 = estimate_bpm_welch(filtered_cheby2, fps, ax=ax_cheby2, label='Chebyshev-II PSD')
+                    bpm_fir = estimate_bpm_welch(filtered_fir, fps) # no PSD for basic bandpass
+
+                    # print bpm to console + annotate live plot
+                    print(f"BPM Butterworth: {bpm_butter:.2f} | Cheby2: {bpm_cheby2:.2f} | FIR: {bpm_fir:.2f}")
+                    bpm_cheby2_text.set_text(f"BPM Chebyshev II: {bpm_cheby2:.2f}")
+                    bpm_butter_text.set_text(f"BPM Butterworth: {bpm_butter:.2f}")
+                    bpm_fir_text.set_text(f"BPM FIR: {bpm_fir:.2f}")
 
 
             else:

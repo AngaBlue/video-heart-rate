@@ -300,12 +300,6 @@ def main():
     )
     live_sos_init(sos)
 
-
-    # variables for calculating fps from live video -> average for last N frames
-    '''N = 30
-    frame_times = deque(maxlen=N)
-    prev_time = time.perf_counter_ns()'''
-
     if not cam.isOpened():
         print("error: could not open webcam.")
         exit()
@@ -341,10 +335,9 @@ def main():
                 timestamp_ms = int(time.perf_counter_ns()  // 1_000_000) # time in milliseconds
                 landmarker.detect_async(mp_image, timestamp_ms)
 
-                # process frame -> identify ROI, get green channel signal
+                # process frame -> identify ROI, get green channel signal, filter
                 if last_result and last_result.face_landmarks:
                     process_frame(frame_bgr, last_result.face_landmarks[0])
-
                 
                 # update dynamic plot 
                 signals = [green_signal_cheek, green_signal_filtered]
@@ -361,7 +354,6 @@ def main():
 
             cv.imshow("face landmarker with rois", frame_bgr)
 
-            
             
             key = cv.waitKey(1) & 0xFF # wait 1 ms, then extract keycode
             if key == ord('q'):
